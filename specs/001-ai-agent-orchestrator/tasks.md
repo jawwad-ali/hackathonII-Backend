@@ -20,15 +20,15 @@
 
 **Purpose**: Initialize project using uv and create basic FastAPI structure
 
-- [ ] T001 Initialize project with uv creating .venv in project root
-- [ ] T002 Create pyproject.toml with dependencies: fastapi, openai-agents-python, agents-mcp, openai, pydantic, uvicorn, python-dotenv, tenacity, pythonjsonlogger
-- [ ] T003 Install dependencies using uv pip install -e . command
-- [ ] T004 Create src/ directory structure with subdirectories: agents/, api/, mcp/, streaming/, observability/, resilience/
-- [ ] T005 [P] Create .env.example file with Gemini API and MCP server configuration template
-- [ ] T006 [P] Create .gitignore with .env and .venv entries
-- [ ] T007 Create src/main.py with basic FastAPI app initialization and /health endpoint returning {"status": "healthy"}
-- [ ] T008 Create src/config.py with environment variable loading using python-dotenv for Gemini and MCP configuration
-- [ ] T009 Create mcp_agent.config.yaml with todo_server MCP configuration
+- [X] T001 Initialize project with uv creating .venv in project root
+- [X] T002 Create pyproject.toml with dependencies: fastapi, openai-agents-python, agents-mcp, openai, pydantic, uvicorn, python-dotenv, tenacity, pythonjsonlogger
+- [X] T003 Install dependencies using uv pip install -e . command
+- [X] T004 Create src/ directory structure with subdirectories: agents/, api/, mcp/, streaming/, observability/, resilience/
+- [X] T005 [P] Create .env.example file with Gemini API and MCP server configuration template
+- [X] T006 [P] Create .gitignore with .env and .venv entries
+- [X] T007 Create src/main.py with basic FastAPI app initialization and /health endpoint returning {"status": "healthy"}
+- [X] T008 Create src/config.py with environment variable loading using python-dotenv for Gemini and MCP configuration
+- [X] T009 Create mcp_agent.config.yaml with todo_server MCP configuration
 - [ ] T010 [P] Create Dockerfile with multi-stage build using python:3.11-slim-bookworm base image
 - [ ] T011 [P] Create docker-compose.yml with orchestrator, mcp-server, and postgres services
 
