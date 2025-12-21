@@ -38,10 +38,10 @@
 
 **Purpose**: Implement AsyncOpenAI client targeting Gemini 2.5 Flash and TodoAgent using OpenAI Agents SDK
 
-- [ ] T012 Create src/agents/__init__.py empty module file
-- [ ] T013 Implement AsyncOpenAI client configuration in src/config.py with Gemini base_url and API key from environment
-- [ ] T014 Create src/agents/todo_agent.py with TodoAgent definition using OpenAI Agents SDK
-- [ ] T015 Implement set_default_openai_client() call in src/agents/todo_agent.py with Gemini-configured AsyncOpenAI
+- [X] T012 Create src/agents/__init__.py empty module file
+- [X] T013 Implement AsyncOpenAI client configuration in src/config.py with Gemini base_url and API key from environment
+- [X] T014 Create src/agents/todo_agent.py with TodoAgent definition using OpenAI Agents SDK
+- [X] T015 Implement set_default_openai_client() call in src/agents/todo_agent.py with Gemini-configured AsyncOpenAI
 - [ ] T016 Define TodoAgent system instructions in src/agents/todo_agent.py emphasizing intent extraction and MCP tool usage without internal database logic
 
 ---

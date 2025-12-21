@@ -7,6 +7,7 @@ from pydantic_settings import BaseSettings
 from pydantic import Field, field_validator
 from typing import List
 import os
+from openai import AsyncOpenAI
 
 
 class Settings(BaseSettings):
@@ -144,3 +145,20 @@ def get_gemini_config() -> dict:
         "base_url": settings.GEMINI_BASE_URL,
         "model": settings.GEMINI_MODEL,
     }
+
+
+def get_gemini_client() -> AsyncOpenAI:
+    """
+    Create and return an AsyncOpenAI client configured for Gemini API.
+
+    This client bridges OpenAI Agents SDK to Google Gemini 2.5 Flash
+    by configuring a custom base_url pointing to Gemini's OpenAI-compatible endpoint.
+
+    Returns:
+        AsyncOpenAI: Configured async OpenAI client for Gemini
+    """
+    config = get_gemini_config()
+    return AsyncOpenAI(
+        api_key=config["api_key"],
+        base_url=config["base_url"]
+    )
