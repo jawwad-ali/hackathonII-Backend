@@ -11,6 +11,9 @@ import logging
 # Import configuration
 from src.config import settings
 
+# Import API routes
+from src.api.routes import router as chat_router
+
 # Configure logger
 logger = logging.getLogger(__name__)
 
@@ -49,6 +52,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Include API routers
+app.include_router(chat_router)
+
 
 @app.get("/health")
 async def health_check():
@@ -79,6 +85,11 @@ async def root():
         "message": "AI Agent Orchestrator for Todo Management",
         "docs": "/docs",
         "health": "/health",
+        "endpoints": {
+            "chat_stream": "/chat/stream",
+            "health": "/health",
+            "docs": "/docs",
+        }
     }
 
 

@@ -66,10 +66,10 @@
 - [X] T023 Create src/api/schemas.py with ChatRequest Pydantic model including input validation (1-5000 chars, UTF-8, control character stripping)
 - [X] T024 Create src/streaming/__init__.py empty module file
 - [X] T025 Create src/streaming/chatkit.py with SSE event formatters for thinking, tool_call, response_delta, error, done events
-- [ ] T026 Create src/api/routes.py with POST /chat/stream endpoint using StreamingResponse media_type="text/event-stream"
-- [ ] T027 Implement async generator in src/api/routes.py calling Runner.run_streamed() with TodoAgent and MCP context
-- [ ] T028 Map OpenAI Agents SDK stream events to ChatKit SSE format in src/streaming/chatkit.py
-- [ ] T029 Integrate streaming endpoint in src/main.py by including router from src/api/routes.py
+- [X] T026 Create src/api/routes.py with POST /chat/stream endpoint using StreamingResponse media_type="text/event-stream"
+- [X] T027 Implement async generator in src/api/routes.py calling Runner.run_streamed() with TodoAgent and MCP context
+- [X] T028 Map OpenAI Agents SDK stream events to ChatKit SSE format in src/streaming/chatkit.py
+- [X] T029 Integrate streaming endpoint in src/main.py by including router from src/api/routes.py
 
 ---
 

@@ -185,6 +185,104 @@ def done_event(
     return format_sse_event(EventType.DONE, data)
 
 
+def map_agent_event_to_chatkit(
+    event: Any,
+    stream_builder: "StreamBuilder"
+) -> Optional[str]:
+    """
+    Map OpenAI Agents SDK stream events to ChatKit SSE format.
+
+    This function handles the conversion of various event types from the
+    OpenAI Agents SDK (via agents_mcp) to the ChatKit SSE protocol format.
+
+    Args:
+        event: Stream event from Runner.run_streamed()
+        stream_builder: StreamBuilder instance for state management
+
+    Returns:
+        Formatted SSE event string, or None if event should be skipped
+
+    Event Type Mappings:
+        - ResponseTextDeltaEvent (delta) → response_delta SSE
+        - ToolCallEvent (tool_name, arguments) → tool_call SSE
+        - ToolCallResultEvent (tool_name, result) → tool_call SSE (completed)
+        - AgentUpdatedStreamEvent (content) → thinking SSE
+        - AgentThinkingEvent (reasoning) → thinking SSE
+        - ErrorEvent (error) → error SSE
+        - Other events → None (skipped)
+
+    Example:
+        >>> event = ResponseTextDeltaEvent(delta="Hello")
+        >>> sse = map_agent_event_to_chatkit(event, stream_builder)
+        >>> print(sse)
+        'event: response_delta\\ndata: {"delta": "Hello", "accumulated": "Hello"}\\n\\n'
+    """
+    event_type = type(event).__name__
+
+    # Handle text delta events (agent text responses)
+    if hasattr(event, 'delta') and event.delta:
+        return stream_builder.add_response_delta(event.delta)
+
+    # Handle tool call initiation events
+    elif hasattr(event, 'tool_name') and not hasattr(event, 'result'):
+        tool_name = event.tool_name
+        tool_args = getattr(event, 'arguments', {})
+        return stream_builder.add_tool_call(
+            tool_name=tool_name,
+            arguments=tool_args,
+            status=ToolStatus.IN_PROGRESS
+        )
+
+    # Handle tool call completion events
+    elif hasattr(event, 'tool_name') and hasattr(event, 'result'):
+        tool_name = event.tool_name
+        tool_args = getattr(event, 'arguments', {})
+        return stream_builder.add_tool_call(
+            tool_name=tool_name,
+            arguments=tool_args,
+            status=ToolStatus.COMPLETED
+        )
+
+    # Handle agent thinking/reasoning events
+    elif event_type in ["AgentUpdatedStreamEvent", "AgentThinkingEvent"]:
+        # Try multiple attribute names for content
+        content = None
+        for attr in ['content', 'reasoning', 'thought', 'message']:
+            if hasattr(event, attr):
+                content = getattr(event, attr)
+                if content:
+                    break
+
+        if content:
+            return stream_builder.add_thinking(str(content))
+
+    # Handle explicit error events
+    elif event_type == "ErrorEvent" or hasattr(event, 'error'):
+        error_msg = getattr(event, 'error', str(event))
+        error_type_str = getattr(event, 'error_type', 'GEMINI_API_ERROR')
+
+        # Map error type string to ErrorType enum
+        try:
+            error_type = ErrorType[error_type_str.upper()]
+        except (KeyError, AttributeError):
+            error_type = ErrorType.GEMINI_API_ERROR
+
+        return stream_builder.add_error(
+            error_type=error_type,
+            message=str(error_msg),
+            recoverable=getattr(event, 'recoverable', True)
+        )
+
+    # Handle raw response events (fallback for text content)
+    elif event_type == "raw_response_event" and hasattr(event, 'content'):
+        content = event.content
+        if isinstance(content, str) and content.strip():
+            return stream_builder.add_response_delta(content)
+
+    # Skip other event types (debug, metadata, etc.)
+    return None
+
+
 class StreamBuilder:
     """
     Helper class for building streaming responses with accumulated state.
