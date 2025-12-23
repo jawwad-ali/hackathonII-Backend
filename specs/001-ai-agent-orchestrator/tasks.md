@@ -42,7 +42,7 @@
 - [X] T013 Implement AsyncOpenAI client configuration in src/config.py with Gemini base_url and API key from environment
 - [X] T014 Create src/agents/todo_agent.py with TodoAgent definition using OpenAI Agents SDK
 - [X] T015 Implement set_default_openai_client() call in src/agents/todo_agent.py with Gemini-configured AsyncOpenAI
-- [ ] T016 Define TodoAgent system instructions in src/agents/todo_agent.py emphasizing intent extraction and MCP tool usage without internal database logic
+- [X] T016 Define TodoAgent system instructions in src/agents/todo_agent.py emphasizing intent extraction and MCP tool usage without internal database logic
 
 ---
 
@@ -50,11 +50,11 @@
 
 **Purpose**: Set up MCP Client within FastAPI connecting to FastMCP server and dynamically register MCP tools to TodoAgent
 
-- [ ] T017 Create src/mcp/__init__.py empty module file
-- [ ] T018 Create src/mcp/client.py with agents_mcp RunnerContext initialization using mcp_agent.config.yaml
-- [ ] T019 Implement dynamic MCP tool discovery in src/mcp/client.py connecting to todo_server
-- [ ] T020 Update src/agents/todo_agent.py to register discovered MCP tools (create_todo, list_todos, update_todo, delete_todo)
-- [ ] T021 Create src/agents/tool_definitions.py documenting expected MCP tool schemas for reference
+- [X] T017 Create src/mcp/__init__.py empty module file
+- [X] T018 Create src/mcp/client.py with agents_mcp RunnerContext initialization using mcp_agent.config.yaml
+- [X] T019 Implement dynamic MCP tool discovery in src/mcp/client.py connecting to todo_server
+- [X] T020 Update src/agents/todo_agent.py to register discovered MCP tools (create_todo, list_todos, update_todo, delete_todo)
+- [X] T021 Create src/agents/tool_definitions.py documenting expected MCP tool schemas for reference
 
 ---
 
@@ -62,10 +62,10 @@
 
 **Purpose**: Implement /api/chatkit endpoint with streaming response including Thinking blocks and Tool Call status events
 
-- [ ] T022 Create src/api/__init__.py empty module file
-- [ ] T023 Create src/api/schemas.py with ChatRequest Pydantic model including input validation (1-5000 chars, UTF-8, control character stripping)
-- [ ] T024 Create src/streaming/__init__.py empty module file
-- [ ] T025 Create src/streaming/chatkit.py with SSE event formatters for thinking, tool_call, response_delta, error, done events
+- [X] T022 Create src/api/__init__.py empty module file
+- [X] T023 Create src/api/schemas.py with ChatRequest Pydantic model including input validation (1-5000 chars, UTF-8, control character stripping)
+- [X] T024 Create src/streaming/__init__.py empty module file
+- [X] T025 Create src/streaming/chatkit.py with SSE event formatters for thinking, tool_call, response_delta, error, done events
 - [ ] T026 Create src/api/routes.py with POST /chat/stream endpoint using StreamingResponse media_type="text/event-stream"
 - [ ] T027 Implement async generator in src/api/routes.py calling Runner.run_streamed() with TodoAgent and MCP context
 - [ ] T028 Map OpenAI Agents SDK stream events to ChatKit SSE format in src/streaming/chatkit.py

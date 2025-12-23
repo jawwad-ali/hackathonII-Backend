@@ -56,7 +56,7 @@ Examples:
 """
 
 
-def create_todo_agent() -> Agent:
+def create_todo_agent(mcp_servers: List[str] = None) -> Agent:
     """
     Create and configure the TodoAgent using OpenAI Agents SDK.
 
@@ -65,15 +65,28 @@ def create_todo_agent() -> Agent:
     - MCP tool usage (no internal state)
     - Conversational response generation
 
-    MCP tools are registered separately after agent creation via the
-    agents_mcp integration layer.
+    MCP tools are registered dynamically when mcp_servers parameter is provided.
+    The OpenAI Agents SDK automatically discovers and registers tools from the
+    specified MCP servers at agent initialization time.
+
+    Args:
+        mcp_servers: List of MCP server names for tool discovery
+                    (e.g., ["todo_server"]). If None, agent is created
+                    without MCP tools (for testing).
 
     Returns:
-        Agent: Configured TodoAgent instance
+        Agent: Configured TodoAgent instance with registered MCP tools
+
+    Example:
+        >>> # Create agent with MCP tools
+        >>> agent = create_todo_agent(mcp_servers=["todo_server"])
+        >>>
+        >>> # Create agent without tools (for testing)
+        >>> agent = create_todo_agent()
     """
     agent = Agent(
         name="TodoAgent",
         instructions=TODO_AGENT_INSTRUCTIONS,
-        tools=[],  # MCP tools will be registered dynamically in mcp/client.py
+        mcp_servers=mcp_servers or [],  # Register MCP tools from specified servers
     )
     return agent
