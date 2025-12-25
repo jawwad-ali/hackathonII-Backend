@@ -1,6 +1,8 @@
 """
 MCP Client for Todo Server Integration
 Handles RunnerContext initialization and dynamic MCP tool discovery
+
+Includes circuit breaker and retry logic for resilience against MCP server failures.
 """
 
 from agents_mcp import RunnerContext
@@ -8,8 +10,31 @@ from mcp_agent.config import MCPSettings, get_settings
 from typing import List, Dict, Any
 import logging
 from pathlib import Path
+from datetime import timedelta
+
+# Import resilience components
+from src.resilience.circuit_breaker import (
+    CircuitBreaker,
+    CircuitBreakerConfig,
+    CircuitBreakerError
+)
+from src.resilience.retry import mcp_retry
 
 logger = logging.getLogger(__name__)
+
+# Global circuit breaker for MCP server
+# Configuration:
+# - 5 consecutive failures before opening
+# - 30 second recovery timeout
+# - 3 test calls in half-open state
+_mcp_circuit_breaker = CircuitBreaker(
+    name="mcp_server",
+    config=CircuitBreakerConfig(
+        failure_threshold=5,
+        recovery_timeout=timedelta(seconds=30),
+        half_open_max_calls=3
+    )
+)
 
 
 def get_mcp_config_path() -> Path:
@@ -23,25 +48,20 @@ def get_mcp_config_path() -> Path:
     return Path(__file__).parent.parent.parent / "mcp_agent.config.yaml"
 
 
-def initialize_mcp_context() -> RunnerContext:
+@mcp_retry
+async def _initialize_mcp_context_with_retry() -> RunnerContext:
     """
-    Initialize RunnerContext using mcp_agent.config.yaml.
+    Internal function to initialize MCP context with retry logic.
 
-    This function loads the MCP configuration from the YAML file and creates
-    a RunnerContext that will be used to connect the TodoAgent to the
-    external FastMCP server handling PostgreSQL + SQLModel CRUD operations.
-
-    The config file defines the todo_server MCP server with:
-    - command: "uvx"
-    - args: ["fastmcp", "run", "todo_server.py"]
-    - env: DATABASE_URL and other environment variables
-
-    Returns:
-        RunnerContext: Initialized context for MCP server communication
+    This function is wrapped with @mcp_retry decorator for exponential backoff:
+    - Max attempts: 5
+    - Exponential backoff: 1s → 2s → 4s → 8s → 16s (with jitter)
+    - Max wait: 30 seconds
 
     Raises:
         FileNotFoundError: If mcp_agent.config.yaml is not found
         ValueError: If config file is invalid or missing required fields
+        ConnectionError: If MCP server cannot be reached (after retries)
     """
     config_path = get_mcp_config_path()
 
@@ -68,11 +88,60 @@ def initialize_mcp_context() -> RunnerContext:
 
         return context
 
+    except (ConnectionError, TimeoutError, OSError) as e:
+        # These errors trigger retry logic
+        logger.warning(f"MCP context initialization failed (will retry): {e}")
+        raise
+
     except Exception as e:
+        # Other errors (config errors, etc.) don't trigger retry
         logger.error(f"Failed to initialize MCP context: {e}")
         raise ValueError(
             f"Invalid MCP configuration in {config_path}: {e}"
         ) from e
+
+
+async def initialize_mcp_context() -> RunnerContext:
+    """
+    Initialize RunnerContext using mcp_agent.config.yaml with resilience.
+
+    This function wraps MCP initialization with:
+    - Circuit breaker pattern (fail-fast when MCP server is down)
+    - Exponential backoff retry (5 attempts with jitter)
+
+    The config file defines the todo_server MCP server with:
+    - command: "uvx"
+    - args: ["fastmcp", "run", "todo_server.py"]
+    - env: DATABASE_URL and other environment variables
+
+    Returns:
+        RunnerContext: Initialized context for MCP server communication
+
+    Raises:
+        CircuitBreakerError: If circuit breaker is open (MCP server unavailable)
+        FileNotFoundError: If mcp_agent.config.yaml is not found
+        ValueError: If config file is invalid or missing required fields
+        ConnectionError: If MCP server cannot be reached (after retries)
+
+    Example:
+        >>> try:
+        ...     context = await initialize_mcp_context()
+        ... except CircuitBreakerError:
+        ...     logger.error("MCP server circuit breaker open - service unavailable")
+        ...     # Return cached data or fallback response
+    """
+    try:
+        # Circuit breaker wraps retry logic
+        return await _mcp_circuit_breaker.call(_initialize_mcp_context_with_retry)
+
+    except CircuitBreakerError as e:
+        logger.error(f"Circuit breaker open for MCP server: {e}")
+        # Re-raise with context for caller to handle
+        raise
+
+    except Exception as e:
+        logger.error(f"MCP context initialization failed: {e}")
+        raise
 
 
 async def discover_mcp_tools(context: RunnerContext) -> List[str]:
@@ -157,22 +226,53 @@ async def discover_mcp_tools(context: RunnerContext) -> List[str]:
         ) from e
 
 
-def get_runner_context() -> RunnerContext:
+async def get_runner_context() -> RunnerContext:
     """
-    Get a configured RunnerContext for use with TodoAgent.
+    Get a configured RunnerContext for use with TodoAgent (with resilience).
 
     This is a convenience function that combines initialization and
     returns a ready-to-use context for running the agent.
 
+    Includes circuit breaker and retry logic for resilience.
+
     Returns:
         RunnerContext: Ready-to-use context with MCP server configuration
+
+    Raises:
+        CircuitBreakerError: If circuit breaker is open (MCP server unavailable)
+        Other exceptions from initialize_mcp_context()
 
     Example:
         >>> from agents_mcp import Runner
         >>> from agents.todo_agent import create_todo_agent
         >>>
         >>> agent = create_todo_agent()
-        >>> context = get_runner_context()
-        >>> result = await Runner.run(agent, input="Add buy eggs to my list", context=context)
+        >>> try:
+        ...     context = await get_runner_context()
+        ...     result = await Runner.run(agent, input="Add buy eggs to my list", context=context)
+        ... except CircuitBreakerError:
+        ...     # Handle MCP server unavailability
+        ...     return {"error": "MCP service temporarily unavailable"}
     """
-    return initialize_mcp_context()
+    return await initialize_mcp_context()
+
+
+def get_mcp_circuit_breaker() -> CircuitBreaker:
+    """
+    Get the MCP server circuit breaker for monitoring.
+
+    This function provides access to the circuit breaker instance for:
+    - Health check endpoints
+    - Monitoring dashboards
+    - Manual circuit breaker reset (administrative use)
+
+    Returns:
+        CircuitBreaker: The global MCP server circuit breaker
+
+    Example:
+        >>> breaker = get_mcp_circuit_breaker()
+        >>> state = breaker.get_state()
+        >>> print(f"Circuit state: {state.state.value}")
+        >>> print(f"Failure count: {state.failure_count}")
+    """
+    return _mcp_circuit_breaker

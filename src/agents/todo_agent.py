@@ -1,11 +1,18 @@
 """
 Todo Agent Definition
 Defines the OpenAI Agents SDK agent for natural language todo management
+
+Includes circuit breaker and retry logic for Gemini API resilience.
 """
 
 from agents import Agent, set_default_openai_client
-from typing import List
-from src.config import get_gemini_client
+from typing import List, Any, Dict
+from src.config import get_gemini_client, get_gemini_circuit_breaker
+from src.resilience.circuit_breaker import CircuitBreakerError
+from src.resilience.retry import gemini_retry
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 # Configure the OpenAI Agents SDK to use Gemini 2.5 Flash via AsyncOpenAI
@@ -90,3 +97,123 @@ def create_todo_agent(mcp_servers: List[str] = None) -> Agent:
         mcp_servers=mcp_servers or [],  # Register MCP tools from specified servers
     )
     return agent
+
+
+@gemini_retry
+async def _execute_agent_with_retry(agent: Agent, input_text: str, context: Any = None) -> Any:
+    """
+    Internal function to execute agent with retry logic.
+
+    This function is wrapped with @gemini_retry decorator for exponential backoff:
+    - Max attempts: 3
+    - Exponential backoff: 2s → 4s → 8s (with jitter)
+    - Max wait: 60 seconds
+
+    Args:
+        agent: The TodoAgent instance
+        input_text: User's natural language input
+        context: Optional RunnerContext for MCP integration
+
+    Returns:
+        Agent execution result
+
+    Raises:
+        ConnectionError, TimeoutError, OSError: Network/API errors (triggers retry)
+        Other exceptions: Passed through without retry
+    """
+    from agents_mcp import Runner
+
+    try:
+        # Execute agent with MCP context
+        if context:
+            result = await Runner.run(agent, input=input_text, context=context)
+        else:
+            result = await Runner.run(agent, input=input_text)
+
+        return result
+
+    except (ConnectionError, TimeoutError, OSError) as e:
+        # These errors trigger retry logic
+        logger.warning(f"Gemini API call failed (will retry): {e}")
+        raise
+
+    except Exception as e:
+        # Other errors don't trigger retry
+        logger.error(f"Agent execution failed: {e}")
+        raise
+
+
+async def execute_agent_with_resilience(
+    agent: Agent,
+    input_text: str,
+    context: Any = None
+) -> Dict[str, Any]:
+    """
+    Execute TodoAgent with circuit breaker and retry logic for resilience.
+
+    This function wraps agent execution with:
+    - Circuit breaker pattern (fail-fast when Gemini API is down)
+    - Exponential backoff retry (3 attempts with jitter)
+
+    The resilience layers protect against:
+    - Gemini API rate limiting
+    - Network transient failures
+    - Temporary API unavailability
+
+    Args:
+        agent: The TodoAgent instance
+        input_text: User's natural language input
+        context: Optional RunnerContext for MCP integration
+
+    Returns:
+        Dict containing execution result or error information:
+        - Success: {"success": True, "result": <agent_result>}
+        - Circuit Open: {"success": False, "error": "circuit_breaker_open", "message": ...}
+        - Other Error: {"success": False, "error": "execution_failed", "message": ...}
+
+    Example:
+        >>> agent = create_todo_agent(mcp_servers=["todo_server"])
+        >>> context = await get_runner_context()
+        >>> result = await execute_agent_with_resilience(
+        ...     agent,
+        ...     "Add buy eggs to my list",
+        ...     context
+        ... )
+        >>> if result["success"]:
+        ...     print(result["result"])
+        ... else:
+        ...     print(f"Error: {result['message']}")
+    """
+    circuit_breaker = get_gemini_circuit_breaker()
+
+    try:
+        # Circuit breaker wraps retry logic
+        result = await circuit_breaker.call(
+            _execute_agent_with_retry,
+            agent,
+            input_text,
+            context
+        )
+
+        return {
+            "success": True,
+            "result": result
+        }
+
+    except CircuitBreakerError as e:
+        logger.error(f"Circuit breaker open for Gemini API: {e}")
+        return {
+            "success": False,
+            "error": "circuit_breaker_open",
+            "message": "AI service temporarily unavailable. Please try again later.",
+            "details": str(e)
+        }
+
+    except Exception as e:
+        logger.error(f"Agent execution failed: {e}")
+        return {
+            "success": False,
+            "error": "execution_failed",
+            "message": f"Failed to process request: {str(e)}",
+            "details": str(e)
+        }

@@ -1,6 +1,8 @@
 """
 Configuration Management
 Loads and validates environment variables using Pydantic Settings
+
+Includes circuit breaker for Gemini API calls to prevent cascading failures.
 """
 
 from pydantic_settings import BaseSettings
@@ -8,6 +10,15 @@ from pydantic import Field, field_validator
 from typing import List
 import os
 from openai import AsyncOpenAI
+from datetime import timedelta
+
+# Import resilience components
+from src.resilience.circuit_breaker import (
+    CircuitBreaker,
+    CircuitBreakerConfig,
+    CircuitBreakerError
+)
+from src.resilience.retry import gemini_retry
 
 
 class Settings(BaseSettings):
@@ -116,6 +127,20 @@ class Settings(BaseSettings):
 # Global settings instance
 settings = Settings()
 
+# Global circuit breaker for Gemini API
+# Configuration:
+# - 3 consecutive failures before opening (stricter due to external API)
+# - 60 second recovery timeout (longer for external API)
+# - 2 test calls in half-open state
+_gemini_circuit_breaker = CircuitBreaker(
+    name="gemini_api",
+    config=CircuitBreakerConfig(
+        failure_threshold=3,
+        recovery_timeout=timedelta(seconds=60),
+        half_open_max_calls=2
+    )
+)
+
 
 def get_mcp_server_config() -> dict:
     """
@@ -149,16 +174,47 @@ def get_gemini_config() -> dict:
 
 def get_gemini_client() -> AsyncOpenAI:
     """
-    Create and return an AsyncOpenAI client configured for Gemini API.
+    Create and return an AsyncOpenAI client configured for Gemini API with resilience.
 
     This client bridges OpenAI Agents SDK to Google Gemini 2.5 Flash
     by configuring a custom base_url pointing to Gemini's OpenAI-compatible endpoint.
 
+    The client is wrapped with circuit breaker protection to prevent cascading failures
+    when the Gemini API is unavailable or experiencing issues.
+
+    Note: The circuit breaker is applied at the agent execution level, not at client
+    creation. This function creates a plain client that will be wrapped when used.
+
     Returns:
         AsyncOpenAI: Configured async OpenAI client for Gemini
+
+    Example:
+        >>> client = get_gemini_client()
+        >>> # Circuit breaker protection applied when agent makes API calls
     """
     config = get_gemini_config()
     return AsyncOpenAI(
         api_key=config["api_key"],
         base_url=config["base_url"]
     )
+
+
+def get_gemini_circuit_breaker() -> CircuitBreaker:
+    """
+    Get the Gemini API circuit breaker for monitoring.
+
+    This function provides access to the circuit breaker instance for:
+    - Health check endpoints
+    - Monitoring dashboards
+    - Manual circuit breaker reset (administrative use)
+
+    Returns:
+        CircuitBreaker: The global Gemini API circuit breaker
+
+    Example:
+        >>> breaker = get_gemini_circuit_breaker()
+        >>> state = breaker.get_state()
+        >>> print(f"Circuit state: {state.state.value}")
+        >>> print(f"Failure count: {state.failure_count}")
+    """
+    return _gemini_circuit_breaker

@@ -77,13 +77,13 @@
 
 **Purpose**: Implement exponential backoff retry logic and circuit breaker pattern for external dependencies per FR-012
 
-- [ ] T030 Create src/resilience/__init__.py empty module file
-- [ ] T031 Create src/resilience/circuit_breaker.py with CircuitBreakerState and CircuitBreakerConfig dataclasses
-- [ ] T032 Implement circuit breaker state machine (closed → open → half_open) in src/resilience/circuit_breaker.py
-- [ ] T033 Create src/resilience/retry.py with tenacity exponential backoff configuration for MCP and Gemini calls
-- [ ] T034 Wrap MCP client calls in src/mcp/client.py with circuit breaker and retry logic
-- [ ] T035 Wrap AsyncOpenAI calls in src/agents/todo_agent.py with circuit breaker and retry logic
-- [ ] T036 Update /health endpoint in src/main.py to include circuit breaker states and metrics per openapi.yaml HealthResponse schema
+- [X] T030 Create src/resilience/__init__.py empty module file
+- [X] T031 Create src/resilience/circuit_breaker.py with CircuitBreakerState and CircuitBreakerConfig dataclasses
+- [X] T032 Implement circuit breaker state machine (closed → open → half_open) in src/resilience/circuit_breaker.py
+- [X] T033 Create src/resilience/retry.py with tenacity exponential backoff configuration for MCP and Gemini calls
+- [X] T034 Wrap MCP client calls in src/mcp/client.py with circuit breaker and retry logic
+- [X] T035 Wrap AsyncOpenAI calls in src/agents/todo_agent.py with circuit breaker and retry logic
+- [X] T036 Update /health endpoint in src/main.py to include circuit breaker states and metrics per openapi.yaml HealthResponse schema
 
 ---
 
