@@ -1,210 +1,536 @@
-# Claude Code Rules
+# Claude Code Instructions - AI Agent Orchestrator
 
-This file is generated during init for the selected agent.
+> **Project**: AI Agent Orchestrator for Todo Management
+> **Purpose**: Conversational CRUD interface using ChatKit, OpenAI Agents SDK, and MCP tools
+> **Version**: 1.0.0
 
-You are an expert AI assistant specializing in Spec-Driven Development (SDD). Your primary goal is to work with the architext to build products.
+This file defines how Claude Code should assist with this project. It combines Spec-Driven Development (SDD) workflow with project-specific technical constraints.
 
-## Task context
+---
 
-**Your Surface:** You operate on a project level, providing guidance to users and executing development tasks via a defined set of tools.
+## Table of Contents
 
-**Your Success is Measured By:**
-- All outputs strictly follow the user intent.
-- Prompt History Records (PHRs) are created automatically and accurately for every user prompt.
-- Architectural Decision Record (ADR) suggestions are made intelligently for significant decisions.
-- All changes are small, testable, and reference code precisely.
+1. [Project Overview](#project-overview)
+2. [Core Principles (NON-NEGOTIABLE)](#core-principles-non-negotiable)
+3. [Development Workflow](#development-workflow)
+4. [AI Agent Guidelines](#ai-agent-guidelines)
+5. [Code Standards](#code-standards)
+6. [Project Structure](#project-structure)
+7. [Troubleshooting](#troubleshooting)
 
-## Core Guarantees (Product Promise)
+---
 
-- Record every user input verbatim in a Prompt History Record (PHR) after every user message. Do not truncate; preserve full multiline input.
-- PHR routing (all under `history/prompts/`):
-  - Constitution → `history/prompts/constitution/`
-  - Feature-specific → `history/prompts/<feature-name>/`
-  - General → `history/prompts/general/`
-- ADR suggestions: when an architecturally significant decision is detected, suggest: "📋 Architectural decision detected: <brief>. Document? Run `/sp.adr <title>`." Never auto‑create ADRs; require user consent.
+## Project Overview
 
-## Development Guidelines
+### What We're Building
 
-### 1. Authoritative Source Mandate:
-Agents MUST prioritize and use MCP tools and CLI commands for all information gathering and task execution. NEVER assume a solution from internal knowledge; all methods require external verification.
+An **AI Agent Orchestrator** that connects a ChatKit conversational frontend to Todo management tools via MCP (Model Context Protocol). The system interprets natural language user intent and coordinates CRUD operations on todos.
 
-### 2. Execution Flow:
-Treat MCP servers as first-class tools for discovery, verification, execution, and state capture. PREFER CLI interactions (running commands and capturing outputs) over manual file creation or reliance on internal knowledge.
+**Core Tech Stack**:
+- **Frontend Interface**: OpenAI ChatKit (conversational UI)
+- **Agent Orchestration**: OpenAI Agents SDK
+- **Backend API**: FastAPI
+- **Database**: PostgreSQL + SQLModel (Pydantic integration)
+- **LLM Provider**: Google Gemini (`gemini-2.5-flash`) via AsyncOpenAI bridge
+- **Tool Protocol**: MCP (Model Context Protocol) for todo operations
 
-### 3. Knowledge capture (PHR) for Every User Input.
-After completing requests, you **MUST** create a PHR (Prompt History Record).
+### Architecture
 
-**When to create PHRs:**
-- Implementation work (code changes, new features)
+```
+User → ChatKit → FastAPI → Agent Orchestrator → MCP Tools → PostgreSQL
+                    ↓
+              Gemini 2.5 Flash
+              (via AsyncOpenAI)
+```
+
+**Key Components**:
+- `src/agents/todo_agent.py` - Main orchestrator agent
+- `src/api/routes.py` - FastAPI streaming endpoints
+- `src/streaming/chatkit.py` - ChatKit integration
+- `src/mcp/client.py` - MCP client for tool execution
+- `src/config.py` - Environment and model configuration
+
+---
+
+## Core Principles (NON-NEGOTIABLE)
+
+### 1. Environment-First Rule ⚠️
+
+**ALWAYS verify `.venv` is active before ANY command.**
+
+```bash
+# Activate FIRST (every time)
+# Windows:
+.venv\Scripts\activate
+# Unix/macOS:
+source .venv/bin/activate
+
+# Then run commands
+uv pip install <package>
+uv run pytest
+```
+
+**Rationale**: Environment isolation prevents dependency conflicts and ensures reproducibility. 80% of "works on my machine" issues stem from environment mismanagement.
+
+**Enforcement**:
+- ❌ NEVER suggest `python`, `pip`, or `uv` commands without verifying environment
+- ✅ ALWAYS check/activate `.venv` first, then suggest commands
+
+---
+
+### 2. uv-Exclusive Package Management ⚠️
+
+**ONLY `uv` is authorized.** pip, poetry, conda are **PROHIBITED**.
+
+```bash
+# ✅ CORRECT
+uv pip install fastapi
+uv run uvicorn src.main:app --reload
+uv run pytest
+
+# ❌ WRONG
+pip install fastapi
+poetry add fastapi
+python -m pip install fastapi
+```
+
+**Rationale**: uv is 10-100x faster, deterministic, and prevents dependency hell.
+
+**Enforcement**:
+- All dependencies in `pyproject.toml`
+- Lock file: `requirements.txt` (via `uv pip compile`)
+
+---
+
+### 3. MCP Source of Truth Protocol ⚠️
+
+**Before ANY implementation code, fetch current docs via MCP context-7 server.**
+
+**Required Libraries**:
+- FastAPI
+- OpenAI Agents SDK
+- OpenAI ChatKit
+- SQLModel
+- Official MCP SDK
+- PostgreSQL client (asyncpg/psycopg)
+
+**Workflow**:
+```python
+# Step 1: Resolve library ID
+mcp__context7__resolve-library-id → '/tiangolo/fastapi'
+
+# Step 2: Fetch docs
+mcp__context7__get-library-docs(
+    context7CompatibleLibraryID='/tiangolo/fastapi',
+    mode='code',  # 'code' for API, 'info' for concepts
+    topic='routing'
+)
+
+# Step 3: Document in plan.md
+```
+
+**Rationale**: Libraries evolve. Using outdated patterns = deprecated APIs, breaking changes, security vulnerabilities.
+
+**Enforcement**:
+- ❌ NEVER rely on internal knowledge for these 6 libraries
+- ✅ ALWAYS fetch current docs, document in `plan.md` Technical Context
+
+---
+
+### 4. Gemini-Only Model Architecture ⚠️
+
+**OpenAI models are PROHIBITED.** Use Gemini via AsyncOpenAI bridge.
+
+```python
+# ✅ CORRECT
+from openai import AsyncOpenAI  # Agents SDK version
+
+client = AsyncOpenAI(
+    api_key=os.getenv("GEMINI_API_KEY"),
+    base_url=os.getenv("GEMINI_BASE_URL"),
+)
+
+response = await client.chat.completions.create(
+    model="gemini-2.5-flash",  # PRIMARY MODEL
+    messages=[...],
+    tools=[...]
+)
+
+# ❌ WRONG
+from openai import OpenAI  # Standard client
+model="gpt-4"  # OpenAI models
+model="gpt-3.5-turbo"
+```
+
+**Rationale**: Gemini provides cost efficiency, speed, and quality for conversational CRUD operations.
+
+**Model Selection**:
+- **Primary**: `gemini-2.5-flash` (low latency, cost-effective)
+- **Escalation**: `gemini-2.5-pro` (complex reasoning, requires approval)
+
+---
+
+### 5. Pre-Flight Skills Requirement ⚠️
+
+**Run Claude Code Skills BEFORE Agents SDK implementation.**
+
+**Required Execution Order**:
+```bash
+1. /sp.specify  # Create spec.md (user stories, acceptance criteria)
+2. /sp.plan     # Create plan.md (architecture, MCP docs fetching)
+3. /sp.tasks    # Create tasks.md (implementation breakdown)
+```
+
+**Rationale**: Skills enforce structured planning. Jumping to code without specs = scope creep, poor design, inconsistent behavior.
+
+**Enforcement**:
+- Skills outputs (spec.md, plan.md, tasks.md) guide all implementation
+- Agents SDK code MUST reference these artifacts
+
+---
+
+### 6. Test-First Development
+
+**Write tests BEFORE implementation where feasible.**
+
+**Priority Areas**:
+- API endpoints (contract tests)
+- Database models (CRUD tests)
+- Agent tools (integration tests)
+- Conversational flows (e2e tests)
+
+```bash
+# Run tests
+uv run pytest
+
+# With coverage
+uv run pytest --cov=src --cov-report=term-missing
+```
+
+**Target**: >80% coverage for business logic
+
+---
+
+## Development Workflow
+
+### Standard Development Cycle
+
+```bash
+# 1. Activate Environment (REQUIRED)
+.venv\Scripts\activate  # Windows
+source .venv/bin/activate  # Unix/macOS
+
+# 2. Run Planning Skills (for new features)
+/sp.specify  # Define user stories
+/sp.plan     # Design architecture + fetch MCP docs
+/sp.tasks    # Break down tasks
+
+# 3. Fetch MCP Documentation
+# (via context-7 MCP server, document in plan.md)
+
+# 4. Implement (follow tasks.md order)
+# - Write tests first
+# - Verify environment before each command
+
+# 5. Test
+uv run pytest
+
+# 6. Run Application
+uv run uvicorn src.main:app --reload
+```
+
+### Pre-Commit Checklist
+
+- [ ] `.venv` active during all development
+- [ ] All deps installed via `uv pip install`
+- [ ] MCP docs fetched for new library usage
+- [ ] AsyncOpenAI configured with Gemini endpoint
+- [ ] Model is `gemini-2.5-flash` (not OpenAI models)
+- [ ] Tests pass (`uv run pytest`)
+- [ ] No `.env` in commit
+- [ ] Skills artifacts updated (spec.md, plan.md, tasks.md)
+
+---
+
+## AI Agent Guidelines
+
+### How Claude Code Should Help
+
+**Role**: Expert AI assistant for Spec-Driven Development (SDD) on this project.
+
+**Success Metrics**:
+- All outputs follow user intent
+- Prompt History Records (PHRs) created automatically
+- Architectural Decision Records (ADRs) suggested for significant decisions
+- Changes are small, testable, with precise code references
+
+### Task Execution Contract
+
+For every request, Claude MUST:
+
+1. **Confirm surface & success criteria** (1 sentence)
+2. **List constraints, invariants, non-goals**
+3. **Produce artifact** with acceptance checks (tests/checklists)
+4. **Add follow-ups & risks** (max 3 bullets)
+5. **Create PHR** in `history/prompts/` (constitution/feature/general)
+6. **Suggest ADR** if architecturally significant decision made
+
+### Human-as-Tool Strategy
+
+Invoke the user for:
+1. **Ambiguous Requirements**: Ask 2-3 clarifying questions
+2. **Unforeseen Dependencies**: Surface and ask for prioritization
+3. **Architectural Uncertainty**: Present options with tradeoffs
+4. **Completion Checkpoints**: Summarize progress, confirm next steps
+
+### Default Policies
+
+- **Clarify first**: Keep business understanding separate from technical plan
+- **Don't invent APIs**: Ask targeted questions if contracts missing
+- **No secrets**: Use `.env`, never hardcode tokens
+- **Smallest viable diff**: Don't refactor unrelated code
+- **Cite code**: Use `file_path:line_number` references
+- **Keep reasoning private**: Output only decisions, artifacts, justifications
+
+### Prompt History Records (PHRs)
+
+**After completing work, MUST create PHR.**
+
+**When to create**:
+- Implementation work (code changes, features)
 - Planning/architecture discussions
 - Debugging sessions
 - Spec/task/plan creation
 - Multi-step workflows
 
-**PHR Creation Process:**
+**Process**:
+1. Detect stage: `constitution | spec | plan | tasks | red | green | refactor | explainer | misc | general`
+2. Generate title (3-7 words) → slug
+3. Route to:
+   - `history/prompts/constitution/`
+   - `history/prompts/<feature-name>/`
+   - `history/prompts/general/`
+4. Fill template from `.specify/templates/phr-template.prompt.md`
+5. Validate (no placeholders, complete prompt text, correct path)
+6. Report: ID, path, stage, title
 
-1) Detect stage
-   - One of: constitution | spec | plan | tasks | red | green | refactor | explainer | misc | general
+**Skip PHRs only for**: `/sp.phr` command itself
 
-2) Generate title
-   - 3–7 words; create a slug for the filename.
+### Architectural Decision Records (ADRs)
 
-2a) Resolve route (all under history/prompts/)
-  - `constitution` → `history/prompts/constitution/`
-  - Feature stages (spec, plan, tasks, red, green, refactor, explainer, misc) → `history/prompts/<feature-name>/` (requires feature context)
-  - `general` → `history/prompts/general/`
+**Suggest (never auto-create) when ALL true**:
+- **Impact**: Long-term consequences (framework, model, data, security)
+- **Alternatives**: Multiple viable options considered
+- **Scope**: Cross-cutting, influences system design
 
-3) Prefer agent‑native flow (no shell)
-   - Read the PHR template from one of:
-     - `.specify/templates/phr-template.prompt.md`
-     - `templates/phr-template.prompt.md`
-   - Allocate an ID (increment; on collision, increment again).
-   - Compute output path based on stage:
-     - Constitution → `history/prompts/constitution/<ID>-<slug>.constitution.prompt.md`
-     - Feature → `history/prompts/<feature-name>/<ID>-<slug>.<stage>.prompt.md`
-     - General → `history/prompts/general/<ID>-<slug>.general.prompt.md`
-   - Fill ALL placeholders in YAML and body:
-     - ID, TITLE, STAGE, DATE_ISO (YYYY‑MM‑DD), SURFACE="agent"
-     - MODEL (best known), FEATURE (or "none"), BRANCH, USER
-     - COMMAND (current command), LABELS (["topic1","topic2",...])
-     - LINKS: SPEC/TICKET/ADR/PR (URLs or "null")
-     - FILES_YAML: list created/modified files (one per line, " - ")
-     - TESTS_YAML: list tests run/added (one per line, " - ")
-     - PROMPT_TEXT: full user input (verbatim, not truncated)
-     - RESPONSE_TEXT: key assistant output (concise but representative)
-     - Any OUTCOME/EVALUATION fields required by the template
-   - Write the completed file with agent file tools (WriteFile/Edit).
-   - Confirm absolute path in output.
-
-4) Use sp.phr command file if present
-   - If `.**/commands/sp.phr.*` exists, follow its structure.
-   - If it references shell but Shell is unavailable, still perform step 3 with agent‑native tools.
-
-5) Shell fallback (only if step 3 is unavailable or fails, and Shell is permitted)
-   - Run: `.specify/scripts/bash/create-phr.sh --title "<title>" --stage <stage> [--feature <name>] --json`
-   - Then open/patch the created file to ensure all placeholders are filled and prompt/response are embedded.
-
-6) Routing (automatic, all under history/prompts/)
-   - Constitution → `history/prompts/constitution/`
-   - Feature stages → `history/prompts/<feature-name>/` (auto-detected from branch or explicit feature context)
-   - General → `history/prompts/general/`
-
-7) Post‑creation validations (must pass)
-   - No unresolved placeholders (e.g., `{{THIS}}`, `[THAT]`).
-   - Title, stage, and dates match front‑matter.
-   - PROMPT_TEXT is complete (not truncated).
-   - File exists at the expected path and is readable.
-   - Path matches route.
-
-8) Report
-   - Print: ID, path, stage, title.
-   - On any failure: warn but do not block the main command.
-   - Skip PHR only for `/sp.phr` itself.
-
-### 4. Explicit ADR suggestions
-- When significant architectural decisions are made (typically during `/sp.plan` and sometimes `/sp.tasks`), run the three‑part test and suggest documenting with:
-  "📋 Architectural decision detected: <brief> — Document reasoning and tradeoffs? Run `/sp.adr <decision-title>`"
-- Wait for user consent; never auto‑create the ADR.
-
-### 5. Human as Tool Strategy
-You are not expected to solve every problem autonomously. You MUST invoke the user for input when you encounter situations that require human judgment. Treat the user as a specialized tool for clarification and decision-making.
-
-**Invocation Triggers:**
-1.  **Ambiguous Requirements:** When user intent is unclear, ask 2-3 targeted clarifying questions before proceeding.
-2.  **Unforeseen Dependencies:** When discovering dependencies not mentioned in the spec, surface them and ask for prioritization.
-3.  **Architectural Uncertainty:** When multiple valid approaches exist with significant tradeoffs, present options and get user's preference.
-4.  **Completion Checkpoint:** After completing major milestones, summarize what was done and confirm next steps. 
-
-## Default policies (must follow)
-- Clarify and plan first - keep business understanding separate from technical plan and carefully architect and implement.
-- Do not invent APIs, data, or contracts; ask targeted clarifiers if missing.
-- Never hardcode secrets or tokens; use `.env` and docs.
-- Prefer the smallest viable diff; do not refactor unrelated code.
-- Cite existing code with code references (start:end:path); propose new code in fenced blocks.
-- Keep reasoning private; output only decisions, artifacts, and justifications.
-
-### Execution contract for every request
-1) Confirm surface and success criteria (one sentence).
-2) List constraints, invariants, non‑goals.
-3) Produce the artifact with acceptance checks inlined (checkboxes or tests where applicable).
-4) Add follow‑ups and risks (max 3 bullets).
-5) Create PHR in appropriate subdirectory under `history/prompts/` (constitution, feature-name, or general).
-6) If plan/tasks identified decisions that meet significance, surface ADR suggestion text as described above.
-
-### Minimum acceptance criteria
-- Clear, testable acceptance criteria included
-- Explicit error paths and constraints stated
-- Smallest viable change; no unrelated edits
-- Code references to modified/inspected files where relevant
-
-## Architect Guidelines (for planning)
-
-Instructions: As an expert architect, generate a detailed architectural plan for [Project Name]. Address each of the following thoroughly.
-
-1. Scope and Dependencies:
-   - In Scope: boundaries and key features.
-   - Out of Scope: explicitly excluded items.
-   - External Dependencies: systems/services/teams and ownership.
-
-2. Key Decisions and Rationale:
-   - Options Considered, Trade-offs, Rationale.
-   - Principles: measurable, reversible where possible, smallest viable change.
-
-3. Interfaces and API Contracts:
-   - Public APIs: Inputs, Outputs, Errors.
-   - Versioning Strategy.
-   - Idempotency, Timeouts, Retries.
-   - Error Taxonomy with status codes.
-
-4. Non-Functional Requirements (NFRs) and Budgets:
-   - Performance: p95 latency, throughput, resource caps.
-   - Reliability: SLOs, error budgets, degradation strategy.
-   - Security: AuthN/AuthZ, data handling, secrets, auditing.
-   - Cost: unit economics.
-
-5. Data Management and Migration:
-   - Source of Truth, Schema Evolution, Migration and Rollback, Data Retention.
-
-6. Operational Readiness:
-   - Observability: logs, metrics, traces.
-   - Alerting: thresholds and on-call owners.
-   - Runbooks for common tasks.
-   - Deployment and Rollback strategies.
-   - Feature Flags and compatibility.
-
-7. Risk Analysis and Mitigation:
-   - Top 3 Risks, blast radius, kill switches/guardrails.
-
-8. Evaluation and Validation:
-   - Definition of Done (tests, scans).
-   - Output Validation for format/requirements/safety.
-
-9. Architectural Decision Record (ADR):
-   - For each significant decision, create an ADR and link it.
-
-### Architecture Decision Records (ADR) - Intelligent Suggestion
-
-After design/architecture work, test for ADR significance:
-
-- Impact: long-term consequences? (e.g., framework, data model, API, security, platform)
-- Alternatives: multiple viable options considered?
-- Scope: cross‑cutting and influences system design?
-
-If ALL true, suggest:
-📋 Architectural decision detected: [brief-description]
+**Suggestion text**:
+```
+📋 Architectural decision detected: [brief description]
    Document reasoning and tradeoffs? Run `/sp.adr [decision-title]`
+```
 
-Wait for consent; never auto-create ADRs. Group related decisions (stacks, authentication, deployment) into one ADR when appropriate.
+**Examples requiring ADRs**:
+- Switching model provider (Gemini → other)
+- Database change (PostgreSQL → MongoDB)
+- Conversation flow architecture changes
+- New agent capabilities beyond CRUD
 
-## Basic Project Structure
-
-- `.specify/memory/constitution.md` — Project principles
-- `specs/<feature>/spec.md` — Feature requirements
-- `specs/<feature>/plan.md` — Architecture decisions
-- `specs/<feature>/tasks.md` — Testable tasks with cases
-- `history/prompts/` — Prompt History Records
-- `history/adr/` — Architecture Decision Records
-- `.specify/` — SpecKit Plus templates and scripts
+---
 
 ## Code Standards
-See `.specify/memory/constitution.md` for code quality, testing, performance, security, and architecture principles.
+
+### Security & Secrets
+
+```bash
+# ❌ NEVER
+api_key = "sk-abc123..."
+DATABASE_URL = "postgresql://user:pass@localhost/db"
+
+# ✅ ALWAYS
+api_key = os.getenv("GEMINI_API_KEY")
+DATABASE_URL = os.getenv("DATABASE_URL")
+```
+
+**Requirements**:
+- All secrets in `.env`
+- Provide `.env.example` template
+- Add `.env` to `.gitignore`
+
+### Input Validation
+
+**MUST**:
+- Validate at FastAPI endpoints (Pydantic models)
+- Sanitize conversational input (prevent injection)
+- Apply rate limiting (prevent abuse)
+
+### Patterns for This Project
+
+**Agent Tool Definition**:
+```python
+# src/agents/tool_definitions.py
+from openai import AsyncOpenAI
+
+async def create_todo_tool(title: str, due_date: str = None, priority: str = "medium"):
+    """
+    Creates a new todo item via MCP.
+
+    Args:
+        title: Todo description
+        due_date: ISO date string (optional)
+        priority: low/medium/high
+    """
+    # Call MCP client
+    result = await mcp_client.create_todo(title, due_date, priority)
+    return result
+```
+
+**Streaming Response**:
+```python
+# src/api/routes.py
+from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
+
+@app.post("/chat/stream")
+async def chat_stream(request: ChatRequest):
+    async def generate():
+        async for chunk in agent.process_stream(request.message):
+            yield f"data: {chunk}\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+```
+
+**ChatKit Integration**:
+```python
+# src/streaming/chatkit.py
+from chatkit import ChatKit
+
+chatkit = ChatKit(
+    model="gemini-2.5-flash",
+    tools=[create_todo_tool, list_todos_tool, update_todo_tool, delete_todo_tool]
+)
+```
+
+---
+
+## Project Structure
+
+```
+hackathonII-backend/
+├── .claude/
+│   ├── commands/           # Slash commands (/sp.*)
+│   └── skills/            # Claude Code skills
+├── .specify/
+│   ├── memory/
+│   │   └── constitution.md    # Project principles (detailed)
+│   └── templates/         # Spec, plan, task, ADR templates
+├── history/
+│   ├── prompts/          # Prompt History Records
+│   │   ├── constitution/
+│   │   ├── 001-ai-agent-orchestrator/
+│   │   └── general/
+│   └── adr/              # Architecture Decision Records
+├── specs/
+│   └── 001-ai-agent-orchestrator/
+│       ├── spec.md       # Feature specification
+│       ├── plan.md       # Implementation plan
+│       └── tasks.md      # Task breakdown
+├── src/
+│   ├── agents/
+│   │   ├── todo_agent.py       # Main orchestrator
+│   │   └── tool_definitions.py # MCP tool wrappers
+│   ├── api/
+│   │   ├── routes.py           # FastAPI endpoints
+│   │   └── schemas.py          # Request/response models
+│   ├── mcp/
+│   │   └── client.py           # MCP client
+│   ├── streaming/
+│   │   └── chatkit.py          # ChatKit integration
+│   ├── config.py               # Environment config
+│   └── main.py                 # FastAPI app
+├── tests/                # Pytest tests
+├── .env                  # Secrets (gitignored)
+├── .env.example          # Template
+├── pyproject.toml        # Dependencies
+├── requirements.txt      # Locked deps (uv pip compile)
+├── CLAUDE.md            # This file
+└── README.md            # User documentation
+```
+
+---
+
+## Troubleshooting
+
+### Common Issues
+
+**Issue**: `ModuleNotFoundError` when running code
+**Fix**: Ensure `.venv` is active, reinstall deps: `uv pip install -e .`
+
+**Issue**: `OpenAI API key not found`
+**Fix**: Set `GEMINI_API_KEY` in `.env`, load with `python-dotenv`
+
+**Issue**: Incorrect model name errors
+**Fix**: Verify using `gemini-2.5-flash`, NOT `gpt-*` models
+
+**Issue**: MCP tools not found
+**Fix**: Ensure MCP server running, check `src/mcp/client.py` config
+
+**Issue**: Tests failing
+**Fix**: Run `uv run pytest -v` for details, ensure `.venv` active
+
+### Getting Help
+
+1. **Claude Code Skills**: Run `/sp.clarify` for spec clarification
+2. **MCP Docs**: Fetch latest docs via context-7 before debugging
+3. **Constitution**: See `.specify/memory/constitution.md` for detailed rules
+4. **ADRs**: Check `history/adr/` for past architectural decisions
+5. **PHRs**: Review `history/prompts/` for past prompt-response patterns
+
+---
+
+## Quick Reference
+
+### Essential Commands
+
+```bash
+# Environment
+.venv\Scripts\activate  # Activate (Windows)
+source .venv/bin/activate  # Activate (Unix/macOS)
+
+# Dependencies
+uv pip install <package>
+uv pip compile pyproject.toml -o requirements.txt
+
+# Development
+uv run uvicorn src.main:app --reload  # Run server
+uv run pytest                          # Run tests
+uv run pytest --cov=src               # With coverage
+
+# Skills
+/sp.specify    # Create spec.md
+/sp.plan       # Create plan.md
+/sp.tasks      # Create tasks.md
+/sp.implement  # Execute tasks
+/sp.adr <title>  # Create ADR
+/sp.phr        # Create PHR
+```
+
+### Environment Variables (.env)
+
+```env
+# Database
+DATABASE_URL=postgresql://user:password@localhost:5432/todo_db
+
+# Gemini API
+GEMINI_API_KEY=your_gemini_api_key_here
+GEMINI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
+
+# App
+DEBUG=False
+LOG_LEVEL=INFO
+```
+
+---
+
+**Version**: 1.0.0
+**Last Updated**: 2025-12-25
+**Authority**: This file + `.specify/memory/constitution.md` are supreme governing documents

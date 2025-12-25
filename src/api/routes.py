@@ -10,7 +10,7 @@ from typing import AsyncGenerator
 import logging
 import uuid
 
-from agents_mcp import Runner
+from agents import Runner
 
 from src.api.schemas import ChatRequest, ErrorResponse
 from src.streaming.chatkit import StreamBuilder, ErrorType, map_agent_event_to_chatkit

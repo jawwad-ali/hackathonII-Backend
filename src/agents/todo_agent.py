@@ -5,7 +5,7 @@ Defines the OpenAI Agents SDK agent for natural language todo management
 
 from agents import Agent, set_default_openai_client
 from typing import List
-from config import get_gemini_client
+from src.config import get_gemini_client
 
 
 # Configure the OpenAI Agents SDK to use Gemini 2.5 Flash via AsyncOpenAI

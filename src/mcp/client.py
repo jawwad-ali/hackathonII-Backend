@@ -4,7 +4,7 @@ Handles RunnerContext initialization and dynamic MCP tool discovery
 """
 
 from agents_mcp import RunnerContext
-from mcp_agent.config import MCPSettings, load_config
+from mcp_agent.config import MCPSettings, get_settings
 from typing import List, Dict, Any
 import logging
 from pathlib import Path
@@ -55,7 +55,8 @@ def initialize_mcp_context() -> RunnerContext:
 
     try:
         # Load configuration using agents_mcp config loader
-        mcp_config: MCPSettings = load_config(str(config_path))
+        settings = get_settings(str(config_path))
+        mcp_config: MCPSettings = settings.mcp
 
         # Create RunnerContext with the loaded configuration
         context = RunnerContext(mcp_config=mcp_config)
