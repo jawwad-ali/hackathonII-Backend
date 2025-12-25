@@ -111,14 +111,14 @@
 
 ### Implementation for User Story 1
 
-- [ ] T044 [US1] Update TodoAgent system instructions in src/agents/todo_agent.py to extract title, due_date, priority from natural language for create operations
-- [ ] T045 [US1] Implement create intent detection logic in streaming handler in src/api/routes.py
-- [ ] T046 [US1] Add error handling for create_todo MCP tool failures in src/api/routes.py with user-friendly error messages
-- [ ] T047 [US1] Stream thinking event showing parameter extraction reasoning in src/api/routes.py
-- [ ] T048 [US1] Stream tool_call event with create_todo and extracted arguments in src/api/routes.py
-- [ ] T049 [US1] Stream response_delta events with confirmation message in src/api/routes.py
-- [ ] T050 [US1] Stream done event with final_output and tools_called=["create_todo"] in src/api/routes.py
-- [ ] T051 [US1] Log mcp_tool_called event with create_todo details in src/api/routes.py
+- [X] T044 [US1] Update TodoAgent system instructions in src/agents/todo_agent.py to extract title, due_date, priority from natural language for create operations
+- [X] T045 [US1] Implement create intent detection logic in streaming handler in src/api/routes.py
+- [X] T046 [US1] Add error handling for create_todo MCP tool failures in src/api/routes.py with user-friendly error messages
+- [X] T047 [US1] Stream thinking event showing parameter extraction reasoning in src/api/routes.py
+- [X] T048 [US1] Stream tool_call event with create_todo and extracted arguments in src/api/routes.py
+- [X] T049 [US1] Stream response_delta events with confirmation message in src/api/routes.py
+- [X] T050 [US1] Stream done event with final_output and tools_called=["create_todo"] in src/api/routes.py
+- [X] T051 [US1] Log mcp_tool_called event with create_todo details in src/api/routes.py
 
 **Checkpoint**: User Story 1 complete - can create todos from natural language with streaming feedback
 

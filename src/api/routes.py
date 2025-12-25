@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from typing import AsyncGenerator
 import logging
+import time
 import uuid
 
 from agents import Runner
@@ -16,6 +17,7 @@ from src.api.schemas import ChatRequest, ErrorResponse
 from src.streaming.chatkit import StreamBuilder, ErrorType, map_agent_event_to_chatkit
 from src.agents.todo_agent import create_todo_agent
 from src.mcp.client import get_runner_context, discover_mcp_tools
+from src.observability.metrics import metrics_tracker
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +100,10 @@ async def chat_stream_generator(
 
         # Process stream events from OpenAI Agents SDK
         # Map events to ChatKit SSE format using enhanced mapper (T028)
+        # Track detected intent for User Story 1 (Create operations)
+        detected_intent = None
+        tool_start_times = {}  # Track tool execution start times for duration calculation
+
         async for event in result.stream_events():
             event_type = type(event).__name__
 
@@ -108,6 +114,76 @@ async def chat_stream_generator(
                     "event_type": event_type
                 }
             )
+
+            # T045: Detect CREATE intent when create_todo tool is called
+            # T047: Stream thinking event showing parameter extraction reasoning
+            # T051: Log mcp_tool_called event with create_todo details
+            if hasattr(event, 'tool_name'):
+                tool_name = event.tool_name
+
+                # Track tool invocation start time (for duration calculation)
+                if not hasattr(event, 'result'):
+                    tool_start_times[tool_name] = time.time()
+
+                if tool_name == "create_todo" and detected_intent is None:
+                    detected_intent = "CREATE"
+                    tool_args = getattr(event, 'arguments', {})
+
+                    logger.info(
+                        f"CREATE intent detected - create_todo tool called",
+                        extra={
+                            "request_id": request_id,
+                            "intent": "CREATE",
+                            "tool_name": tool_name,
+                            "tool_arguments": tool_args
+                        }
+                    )
+
+                    # T047: Stream thinking event showing parameter extraction for CREATE
+                    # Build a user-friendly description of extracted parameters
+                    extracted_params = []
+                    if 'title' in tool_args:
+                        extracted_params.append(f"Task: '{tool_args['title']}'")
+                    if 'due_date' in tool_args:
+                        extracted_params.append(f"Due: {tool_args['due_date']}")
+                    if 'priority' in tool_args:
+                        extracted_params.append(f"Priority: {tool_args['priority']}")
+                    if 'tags' in tool_args and tool_args['tags']:
+                        extracted_params.append(f"Tags: {', '.join(tool_args['tags'])}")
+
+                    if extracted_params:
+                        reasoning = f"I've extracted the following from your request: {' | '.join(extracted_params)}. Creating your todo now..."
+                        yield stream_builder.add_thinking(reasoning)
+
+                # T051: Log mcp_tool_called event when tool execution completes
+                # Detect tool completion by checking for 'result' attribute
+                if hasattr(event, 'result'):
+                    # Calculate tool execution duration
+                    if tool_name in tool_start_times:
+                        tool_duration_ms = (time.time() - tool_start_times[tool_name]) * 1000
+                    else:
+                        # Estimate minimal duration if start time not captured
+                        tool_duration_ms = 1.0
+
+                    # Track MCP tool call with metrics
+                    metrics_tracker.track_mcp_tool_called(
+                        request_id=request_id,
+                        tool_name=tool_name,
+                        duration_ms=tool_duration_ms
+                    )
+
+                    # Log mcp_tool_called event for observability (FR-011)
+                    logger.info(
+                        f"MCP tool execution completed",
+                        extra={
+                            "event": "mcp_tool_called",
+                            "request_id": request_id,
+                            "tool_name": tool_name,
+                            "tool_arguments": getattr(event, 'arguments', {}),
+                            "duration_ms": tool_duration_ms,
+                            "success": True
+                        }
+                    )
 
             # Use comprehensive event mapper to convert SDK events to ChatKit SSE
             sse_event = map_agent_event_to_chatkit(event, stream_builder)
@@ -138,6 +214,7 @@ async def chat_stream_generator(
             f"Chat stream completed successfully",
             extra={
                 "request_id": request_id,
+                "detected_intent": detected_intent,
                 "tools_called": stream_builder.tools_called,
                 "final_output_length": len(final_output)
             }
@@ -146,26 +223,89 @@ async def chat_stream_generator(
     except Exception as e:
         logger.error(
             f"Chat stream error: {str(e)}",
-            extra={"request_id": request_id},
+            extra={
+                "request_id": request_id,
+                "detected_intent": detected_intent,
+                "error_type": type(e).__name__
+            },
             exc_info=True
         )
 
         # Send error event to client
         error_type = ErrorType.GEMINI_API_ERROR
         error_message = "An unexpected error occurred. Please try again."
+        recoverable = True
 
-        # Determine specific error type based on exception
-        if "MCP" in str(e) or "mcp" in str(e).lower():
+        # T046: Enhanced error handling for create_todo MCP tool failures (User Story 1)
+        # Provide user-friendly error messages specific to todo creation
+        error_str = str(e).lower()
+
+        # Check if error is related to create_todo operation
+        is_create_operation = (detected_intent == "CREATE" or
+                              "create_todo" in error_str or
+                              "create" in error_str)
+
+        # MCP connection/server errors
+        if "mcp" in error_str or "connection" in error_str:
             error_type = ErrorType.MCP_CONNECTION_ERROR
-            error_message = "Failed to connect to the todo service. Please try again."
-        elif "timeout" in str(e).lower():
+            if is_create_operation:
+                error_message = "Unable to create your todo - the todo service is currently unavailable. Please try again in a moment."
+            else:
+                error_message = "Failed to connect to the todo service. Please try again."
+
+        # Timeout errors
+        elif "timeout" in error_str:
             error_type = ErrorType.TIMEOUT
-            error_message = "Request timed out. Please try again."
+            if is_create_operation:
+                error_message = "Creating your todo is taking longer than expected. Please try again."
+            else:
+                error_message = "Request timed out. Please try again."
+
+        # Tool execution errors (MCP tool failed)
+        elif "tool" in error_str and ("failed" in error_str or "error" in error_str):
+            error_type = ErrorType.TOOL_EXECUTION_FAILED
+            if is_create_operation:
+                error_message = "Failed to create your todo. The task details may be invalid or the database is unavailable. Please check your input and try again."
+            else:
+                error_message = "Tool execution failed. Please try again."
+
+        # Invalid arguments (validation errors)
+        elif "invalid" in error_str or "validation" in error_str:
+            error_type = ErrorType.INVALID_TOOL_ARGUMENTS
+            if is_create_operation:
+                error_message = "Unable to create todo - the task details couldn't be processed. Please try rephrasing your request with clear title and due date."
+            else:
+                error_message = "Invalid request format. Please try rephrasing."
+            recoverable = True  # User can fix and retry
+
+        # Database errors
+        elif "database" in error_str or "db" in error_str or "constraint" in error_str:
+            error_type = ErrorType.TOOL_EXECUTION_FAILED
+            if is_create_operation:
+                error_message = "Unable to save your todo - database error occurred. Please try again."
+            else:
+                error_message = "Database error occurred. Please try again."
+
+        # Generic errors for create operations
+        elif is_create_operation:
+            error_message = "Sorry, I couldn't create your todo. Please try again or rephrase your request."
+
+        # Log the specific error handling decision
+        logger.info(
+            f"Error categorized for user response",
+            extra={
+                "request_id": request_id,
+                "detected_intent": detected_intent,
+                "error_type": error_type.value,
+                "is_create_operation": is_create_operation,
+                "recoverable": recoverable
+            }
+        )
 
         yield stream_builder.add_error(
             error_type=error_type,
             message=error_message,
-            recoverable=True
+            recoverable=recoverable
         )
 
         # Still send done event to close the stream
