@@ -16,11 +16,22 @@ from src.config import settings, get_gemini_circuit_breaker
 # Import MCP client for circuit breaker access
 from src.mcp.client import get_mcp_circuit_breaker
 
+# Import observability components
+from src.observability import (
+    configure_logging,
+    get_logger,
+    RequestIDMiddleware,
+    metrics_tracker,
+)
+
 # Import API routes
 from src.api.routes import router as chat_router
 
-# Configure logger
-logger = logging.getLogger(__name__)
+# Configure structured JSON logging
+configure_logging(log_level=settings.LOG_LEVEL)
+
+# Get logger instance
+logger = get_logger(__name__)
 
 # Track application startup time for uptime calculation
 _startup_time: float = time.time()
@@ -59,6 +70,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Add Request ID middleware for request correlation
+app.add_middleware(RequestIDMiddleware)
 
 # Include API routers
 app.include_router(chat_router)
@@ -125,13 +139,24 @@ async def health_check():
     else:
         status = "healthy"
 
-    # Build metrics (placeholder for Phase 6 - Observability)
-    # Will be populated with actual request tracking in T041
+    # Get metrics from metrics tracker
+    metrics_summary = metrics_tracker.get_summary()
+
+    # Calculate success rate
+    total_requests = metrics_summary["total_requests"]
+    successful_requests = metrics_summary["successful_requests"]
+    success_rate = (
+        (successful_requests / total_requests * 100.0)
+        if total_requests > 0
+        else 0.0
+    )
+
+    # Build metrics dict per HealthResponse schema
     metrics = {
-        "total_requests": 0,
-        "successful_requests": 0,
-        "failed_requests": 0,
-        "success_rate": 0.0
+        "total_requests": total_requests,
+        "successful_requests": successful_requests,
+        "failed_requests": metrics_summary["failed_requests"],
+        "success_rate": round(success_rate, 2)
     }
 
     # Build HealthResponse per openapi.yaml schema

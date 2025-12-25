@@ -91,13 +91,13 @@
 
 **Purpose**: Implement structured JSON logging with request IDs for correlation per FR-011
 
-- [ ] T037 Create src/observability/__init__.py empty module file
-- [ ] T038 Create src/observability/logging.py with python-json-logger configuration for JSON structured logs
-- [ ] T039 Implement request ID generation middleware in src/observability/logging.py using uuid
-- [ ] T040 Add request ID to logging context for all log entries in src/observability/logging.py
-- [ ] T041 Create src/observability/metrics.py with timing metrics tracking for request_received, mcp_tool_called, gemini_api_called, request_completed events
-- [ ] T042 Integrate structured logging in src/main.py FastAPI application startup
-- [ ] T043 Add X-Request-ID header to streaming responses in src/api/routes.py
+- [X] T037 Create src/observability/__init__.py empty module file
+- [X] T038 Create src/observability/logging.py with python-json-logger configuration for JSON structured logs
+- [X] T039 Implement request ID generation middleware in src/observability/logging.py using uuid
+- [X] T040 Add request ID to logging context for all log entries in src/observability/logging.py
+- [X] T041 Create src/observability/metrics.py with timing metrics tracking for request_received, mcp_tool_called, gemini_api_called, request_completed events
+- [X] T042 Integrate structured logging in src/main.py FastAPI application startup
+- [X] T043 Add X-Request-ID header to streaming responses in src/api/routes.py
 
 ---
 
