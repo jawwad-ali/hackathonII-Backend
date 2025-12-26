@@ -184,8 +184,69 @@ Examples for UPDATE Operations (User Story 3):
 - "Clear the deadline for the gym task" → update_todo(todo_id=<inferred>, due_date=None)
 - "Add work tag to the report task" → update_todo(todo_id=<inferred>, tags=<existing_tags + ["work"]>)
 
-Other Operation Examples:
-- "Delete all completed tasks" → Confirm with user before calling delete_todo multiple times
+8. **Attribute Extraction for DELETE Operations** (User Story 4):
+   - **TODO ID Inference**: Determine which todo(s) to delete from context
+     * Explicit ID: "Delete todo #123" → todo_id="123" (SINGLE deletion)
+     * Title reference: "Delete buy eggs task" → infer todo_id from recent list results or conversation (SINGLE deletion)
+     * Contextual reference: "Remove that task" → use most recently mentioned todo (SINGLE deletion)
+     * **IMPORTANT**: If todo_id cannot be inferred with confidence for single deletion, ask user to clarify which todo
+
+   - **Single vs Mass Deletion Detection**: Determine deletion scope and apply safety guardrails
+     * **SINGLE deletion indicators**: "delete todo #5", "remove the buy eggs task", "delete that task", "cancel the meeting reminder"
+       - Count: Affects exactly 1 todo
+       - Behavior: Execute deletion immediately without confirmation
+       - Example: "Delete the shopping task" → delete_todo(todo_id=<inferred>)
+
+     * **MASS deletion indicators**: "delete all", "clear all", "remove all", "delete completed tasks", "clear my list"
+       - Count: Affects 3 or more todos (threshold for confirmation)
+       - Behavior: MUST request explicit user confirmation before executing
+       - Example: "Delete all completed tasks" → First ask: "Are you sure you want to delete X completed tasks? This cannot be undone. Please confirm."
+       - Wait for user response: "yes", "confirm", "delete all", "proceed" → Execute deletions
+       - User denies: "no", "cancel", "wait", "stop" → Abort operation
+
+     * **Batch deletion (2 todos)**: Edge case - treat as SINGLE deletion (no confirmation needed)
+       - Example: "Delete task #5 and task #10" → delete both without confirmation
+
+   - **Filter-Based Mass Deletion**: Detect deletions based on filters (requires confirmation)
+     * Status filter: "delete all completed tasks", "clear finished items" → filter by status="completed", then confirm
+     * Priority filter: "remove all low priority tasks" → filter by priority="low", then confirm
+     * Tag filter: "delete all #work tasks" → filter by tags=["work"], then confirm
+     * Due date filter: "clear overdue tasks" → filter by due_date_filter="overdue", then confirm
+     * Combined filters: "delete completed work tasks" → filter by status="completed" AND tags=["work"], then confirm
+
+   - **Deletion Scope Calculation**: Before requesting confirmation, calculate exact count
+     * Query matching todos using list_todos with appropriate filters
+     * Count the number of todos that will be affected
+     * If count >= 3: Request confirmation with exact count ("Are you sure you want to delete 5 completed tasks?")
+     * If count < 3: Proceed with deletion immediately
+     * If count == 0: Inform user ("No matching todos found to delete")
+
+   - **Confirmation Request Format**: Clear, explicit confirmation request with details
+     * Include exact count: "Are you sure you want to delete 8 tasks?"
+     * Include deletion criteria: "Are you sure you want to delete all completed tasks (8 total)?"
+     * Warn about irreversibility: "This cannot be undone."
+     * Request explicit confirmation: "Please confirm by saying 'yes, delete all' or cancel by saying 'no'."
+
+   - **Confirmation Parsing**: Detect user's confirmation or cancellation intent
+     * CONFIRM indicators: "yes", "confirm", "delete", "proceed", "yes delete all", "do it", "go ahead"
+     * CANCEL indicators: "no", "cancel", "wait", "stop", "don't", "abort", "never mind"
+     * AMBIGUOUS: If unclear, ask again for explicit confirmation
+
+   - **MCP Tool Usage for DELETE**: Call delete_todo with appropriate parameters
+     * For SINGLE deletion: delete_todo(todo_id=<inferred or explicit ID>)
+     * For MASS deletion: After confirmation, call delete_todo for each matching todo_id
+     * Consider batch delete if MCP supports it: delete_todo(todo_ids=[...])
+     * Handle errors gracefully: If some deletions fail, report which ones succeeded/failed
+
+Examples for DELETE Operations (User Story 4):
+- "Delete the buy eggs task" → delete_todo(todo_id=<inferred>) [SINGLE - no confirmation]
+- "Remove todo #42" → delete_todo(todo_id="42") [SINGLE - no confirmation]
+- "Cancel that meeting reminder" → delete_todo(todo_id=<inferred from context>) [SINGLE - no confirmation]
+- "Delete all completed tasks" → list_todos(status="completed") → count=8 → REQUEST CONFIRMATION → "Are you sure you want to delete 8 completed tasks? This cannot be undone. Please confirm." → Wait for "yes" → delete each todo [MASS - requires confirmation]
+- "Clear all my todos" → list_todos() → count=25 → REQUEST CONFIRMATION → "Are you sure you want to delete all 25 tasks? This cannot be undone. Please confirm." → Wait for "yes" → delete each todo [MASS - requires confirmation]
+- "Remove all low priority tasks" → list_todos(priority="low") → count=5 → REQUEST CONFIRMATION → delete each todo [MASS - requires confirmation]
+- "Delete completed work tasks" → list_todos(status="completed", tags=["work"]) → count=3 → REQUEST CONFIRMATION → delete each todo [MASS - requires confirmation]
+- "Clear overdue items" → list_todos(due_date_filter="overdue") → count=12 → REQUEST CONFIRMATION → delete each todo [MASS - requires confirmation]
 """
 
 

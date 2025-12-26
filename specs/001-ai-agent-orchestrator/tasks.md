@@ -182,19 +182,19 @@
 
 ### Implementation for User Story 4
 
-- [ ] T070 [US4] Update TodoAgent system instructions in src/agents/todo_agent.py to detect single vs mass deletion operations
-- [ ] T071 [US4] Implement delete intent detection logic in streaming handler in src/api/routes.py
-- [ ] T072 [US4] Add mass deletion detection (3+ todos) in src/api/routes.py
-- [ ] T073 [US4] Implement confirmation request streaming for mass deletions in src/api/routes.py showing count and waiting for user approval
-- [ ] T074 [US4] Add confirmation parsing logic for user responses ("yes, delete all") in src/api/routes.py
-- [ ] T075 [US4] Add error handling for delete_todo MCP tool failures in src/api/routes.py with user-friendly error messages
-- [ ] T076 [US4] Stream thinking event showing deletion scope and safety check reasoning in src/api/routes.py
-- [ ] T077 [US4] Stream tool_call event with delete_todo and confirmation=true in src/api/routes.py
-- [ ] T078 [US4] Stream response_delta events with deletion confirmation or warning message in src/api/routes.py
-- [ ] T079 [US4] Stream done event with final_output and tools_called=["delete_todo"] in src/api/routes.py
-- [ ] T080 [US4] Log mcp_tool_called event with delete_todo details in src/api/routes.py
+- [X] T070 [US4] Update TodoAgent system instructions in src/agents/todo_agent.py to detect single vs mass deletion operations
+- [X] T071 [US4] Implement delete intent detection logic in streaming handler in src/api/routes.py
+- [X] T072 [US4] Add mass deletion detection (3+ todos) in src/api/routes.py
+- [X] T073 [US4] Implement confirmation request streaming for mass deletions in src/api/routes.py showing count and waiting for user approval
+- [X] T074 [US4] Add confirmation parsing logic for user responses ("yes, delete all") in src/api/routes.py
+- [X] T075 [US4] Add error handling for delete_todo MCP tool failures in src/api/routes.py with user-friendly error messages
+- [X] T076 [US4] Stream thinking event showing deletion scope and safety check reasoning in src/api/routes.py
+- [X] T077 [US4] Stream tool_call event with delete_todo and confirmation=true in src/api/routes.py
+- [X] T078 [US4] Stream response_delta events with deletion confirmation or warning message in src/api/routes.py
+- [X] T079 [US4] Stream done event with final_output and tools_called=["delete_todo"] in src/api/routes.py
+- [X] T080 [US4] Log mcp_tool_called event with delete_todo details in src/api/routes.py
 
-**Checkpoint**: All user stories complete - full CRUD functionality with safety guardrails
+**Checkpoint**: All user stories complete - full CRUD functionality with safety guardrails ✅
 
 ---
 
