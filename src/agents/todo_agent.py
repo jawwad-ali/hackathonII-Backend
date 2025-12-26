@@ -87,8 +87,53 @@ Examples for CREATE Operations (User Story 1):
 - "Remind me to buy eggs tomorrow at 3pm" → create_todo(title="buy eggs", due_date="<tomorrow's date>T15:00:00", priority="medium")
 - "Create urgent task: submit report ASAP" → create_todo(title="submit report", priority="high")
 
+6. **Attribute Extraction for LIST Operations** (User Story 2):
+   - **Status Filter**: Extract desired completion state from query
+     * PENDING todos: "active tasks", "what do I need to do", "incomplete", "pending tasks", "open items"
+     * COMPLETED todos: "finished tasks", "what did I complete", "done items", "completed tasks"
+     * ALL todos: "everything", "all tasks", "entire list", "all todos", "show me everything"
+     * Default: If not specified, show "pending" (active tasks)
+
+   - **Priority Filter**: Extract priority level from query
+     * HIGH priority: "urgent tasks", "high priority items", "important todos", "critical tasks"
+     * MEDIUM priority: "medium priority", "normal tasks"
+     * LOW priority: "low priority tasks", "non-urgent items", "when I get to it"
+     * Default: If not specified, show ALL priority levels
+
+   - **Due Date Filter**: Convert temporal query expressions to filter values
+     * TODAY: "today", "today's tasks", "what's due today", "tasks for today"
+     * THIS_WEEK: "this week", "week's tasks", "what's due this week", "weekly tasks"
+     * OVERDUE: "overdue", "past due", "late tasks", "missed deadlines"
+     * Specific date: "tasks for Friday", "what's due on Monday" → convert to ISO date
+     * Date range: "tasks between Monday and Friday" → extract start and end dates
+     * Default: If not specified, show ALL due dates
+
+   - **Tags Filter**: Identify category keywords to filter by
+     * Hashtags: "show #work tasks", "#personal items" → tags=["work"], tags=["personal"]
+     * Category keywords: "work todos", "personal reminders" → tags=["work"], tags=["personal"]
+     * Multiple tags: "show work and personal tasks" → tags=["work", "personal"]
+     * Default: If not specified, show ALL tags
+
+   - **Combined Filters**: Handle queries with multiple filter criteria
+     * "Show me high priority work tasks for today" → priority="high", tags=["work"], due_date_filter="today"
+     * "What are my completed tasks this week?" → status="completed", due_date_filter="this_week"
+     * "List all urgent overdue items" → priority="high", due_date_filter="overdue"
+
+   - **MCP Tool Usage for LIST**: Call list_todos with extracted filter arguments
+     * For LIST operations, call list_todos with extracted: status (optional), priority (optional), due_date_filter (optional), tags (optional)
+     * If no filters specified, list_todos() returns all pending todos by default
+
+Examples for LIST Operations (User Story 2):
+- "What's on my todo list?" → list_todos(status="pending")
+- "Show me all tasks" → list_todos(status="all")
+- "What's on my todo list for today?" → list_todos(due_date_filter="today", status="pending")
+- "Show me high priority tasks" → list_todos(priority="high", status="pending")
+- "What work tasks do I have this week?" → list_todos(tags=["work"], due_date_filter="this_week", status="pending")
+- "List all completed tasks" → list_todos(status="completed")
+- "Show me overdue urgent items" → list_todos(due_date_filter="overdue", priority="high", status="pending")
+- "What personal tasks are due today?" → list_todos(tags=["personal"], due_date_filter="today", status="pending")
+
 Other Operation Examples:
-- "What's on my todo list for today?" → list_todos(due_date_filter="today")
 - "Mark buy eggs as complete" → update_todo(todo_id=<inferred>, status="completed")
 - "Delete all completed tasks" → Confirm with user before calling delete_todo multiple times
 """

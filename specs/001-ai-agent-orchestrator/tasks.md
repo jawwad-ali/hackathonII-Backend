@@ -134,15 +134,15 @@
 
 ### Implementation for User Story 2
 
-- [ ] T052 [US2] Update TodoAgent system instructions in src/agents/todo_agent.py to extract status, priority, due_date_filter, tags from natural language for list operations
-- [ ] T053 [US2] Implement list intent detection logic in streaming handler in src/api/routes.py
-- [ ] T054 [US2] Add error handling for list_todos MCP tool failures in src/api/routes.py with user-friendly error messages
-- [ ] T055 [US2] Stream thinking event showing filter extraction reasoning in src/api/routes.py
-- [ ] T056 [US2] Stream tool_call event with list_todos and extracted filter arguments in src/api/routes.py
-- [ ] T057 [US2] Format list_todos results into natural language response in src/api/routes.py
-- [ ] T058 [US2] Stream response_delta events with formatted todo list in src/api/routes.py
-- [ ] T059 [US2] Stream done event with final_output and tools_called=["list_todos"] in src/api/routes.py
-- [ ] T060 [US2] Log mcp_tool_called event with list_todos details in src/api/routes.py
+- [X] T052 [US2] Update TodoAgent system instructions in src/agents/todo_agent.py to extract status, priority, due_date_filter, tags from natural language for list operations
+- [X] T053 [US2] Implement list intent detection logic in streaming handler in src/api/routes.py
+- [X] T054 [US2] Add error handling for list_todos MCP tool failures in src/api/routes.py with user-friendly error messages
+- [X] T055 [US2] Stream thinking event showing filter extraction reasoning in src/api/routes.py
+- [X] T056 [US2] Stream tool_call event with list_todos and extracted filter arguments in src/api/routes.py
+- [X] T057 [US2] Format list_todos results into natural language response in src/api/routes.py
+- [X] T058 [US2] Stream response_delta events with formatted todo list in src/api/routes.py
+- [X] T059 [US2] Stream done event with final_output and tools_called=["list_todos"] in src/api/routes.py
+- [X] T060 [US2] Log mcp_tool_called event with list_todos details in src/api/routes.py
 
 **Checkpoint**: User Stories 1 AND 2 complete - can create and query todos independently
 
