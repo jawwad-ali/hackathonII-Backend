@@ -144,11 +144,34 @@ async def chat_stream_generator(
     Yields:
         SSE formatted event strings (thinking, tool_call, response_delta, error, done)
 
+    Context Inference (T063):
+        Within a single request, the system tracks:
+        - recent_list_results: Todos returned by list_todos (for "update the first one")
+        - last_created_todo_id: ID of most recently created todo
+        - last_updated_todo_id: ID of most recently updated todo
+
+        This enables the agent to infer todo_id from context when the user refers to
+        "that task", "the first one", etc. within the same conversational turn.
+
+        Note: This is request-scoped only. For cross-request conversation memory,
+        the frontend must maintain conversation state and include relevant context
+        in subsequent requests.
+
     Note:
         Event mapping from OpenAI Agents SDK to ChatKit format will be enhanced
         in T028. This implementation provides basic streaming functionality.
     """
     stream_builder = StreamBuilder()
+
+    # T063: Context tracking for todo_id inference within the current request
+    # This allows the agent to reference todos from recent operations in the same conversation turn
+    # Note: This is request-scoped context, not cross-request conversation history
+    # For cross-request context, the frontend would need to maintain conversation state
+    context_state = {
+        "recent_list_results": None,  # Track most recent list_todos results
+        "last_created_todo_id": None,  # Track most recently created todo
+        "last_updated_todo_id": None,  # Track most recently updated todo
+    }
 
     try:
         # Log request received
@@ -302,6 +325,60 @@ async def chat_stream_generator(
                         status=ToolStatus.IN_PROGRESS
                     )
 
+                # T062: Detect UPDATE intent when update_todo tool is called (User Story 3)
+                elif tool_name == "update_todo" and detected_intent is None:
+                    detected_intent = "UPDATE"
+                    tool_args = getattr(event, 'arguments', {})
+
+                    logger.info(
+                        f"UPDATE intent detected - update_todo tool called",
+                        extra={
+                            "request_id": request_id,
+                            "intent": "UPDATE",
+                            "tool_name": tool_name,
+                            "tool_arguments": tool_args
+                        }
+                    )
+
+                    # T065: Stream thinking event showing todo_id inference and field extraction reasoning
+                    # Build a user-friendly description of the update operation
+                    update_params = []
+
+                    # Show which todo is being updated
+                    if 'todo_id' in tool_args:
+                        update_params.append(f"Todo ID: {tool_args['todo_id']}")
+
+                    # Show what fields are being updated
+                    if 'status' in tool_args:
+                        update_params.append(f"Status → {tool_args['status']}")
+                    if 'priority' in tool_args:
+                        update_params.append(f"Priority → {tool_args['priority']}")
+                    if 'title' in tool_args:
+                        update_params.append(f"Title → '{tool_args['title']}'")
+                    if 'due_date' in tool_args:
+                        due_value = tool_args['due_date']
+                        if due_value is None:
+                            update_params.append("Due date → (cleared)")
+                        else:
+                            update_params.append(f"Due date → {due_value}")
+                    if 'tags' in tool_args and tool_args['tags']:
+                        update_params.append(f"Tags → {', '.join(tool_args['tags'])}")
+
+                    if update_params:
+                        reasoning = f"I'm updating the todo with these changes: {' | '.join(update_params)}. Applying updates now..."
+                        yield stream_builder.add_thinking(reasoning)
+                    else:
+                        reasoning = "I'm updating the todo..."
+                        yield stream_builder.add_thinking(reasoning)
+
+                    # T066: Stream tool_call event with update_todo and extracted arguments
+                    # Explicit streaming for better UX control
+                    yield stream_builder.add_tool_call(
+                        tool_name="update_todo",
+                        arguments=tool_args,
+                        status=ToolStatus.IN_PROGRESS
+                    )
+
                 # T051: Log mcp_tool_called event when tool execution completes
                 # Detect tool completion by checking for 'result' attribute
                 if hasattr(event, 'result'):
@@ -319,11 +396,11 @@ async def chat_stream_generator(
                         duration_ms=tool_duration_ms
                     )
 
-                    # T051 & T060: Log mcp_tool_called event for observability (FR-011)
+                    # T051 & T060 & T069: Log mcp_tool_called event for observability (FR-011)
                     # This logs ALL MCP tool executions including:
-                    # - create_todo (User Story 1)
-                    # - list_todos (User Story 2)
-                    # - update_todo (User Story 3)
+                    # - create_todo (User Story 1) - T051
+                    # - list_todos (User Story 2) - T060
+                    # - update_todo (User Story 3) - T069
                     # - delete_todo (User Story 4)
                     logger.info(
                         f"MCP tool execution completed",
@@ -337,9 +414,57 @@ async def chat_stream_generator(
                         }
                     )
 
+                    # T063: Track created todo_id for potential reference in subsequent operations
+                    if tool_name == "create_todo" and detected_intent == "CREATE":
+                        tool_result = event.result
+                        # Extract todo_id from result if available
+                        if isinstance(tool_result, dict) and 'id' in tool_result:
+                            context_state["last_created_todo_id"] = tool_result['id']
+                            logger.debug(
+                                f"Stored created todo_id in context",
+                                extra={
+                                    "request_id": request_id,
+                                    "todo_id": tool_result['id']
+                                }
+                            )
+                        elif hasattr(tool_result, 'id'):
+                            context_state["last_created_todo_id"] = tool_result.id
+                            logger.debug(
+                                f"Stored created todo_id in context",
+                                extra={
+                                    "request_id": request_id,
+                                    "todo_id": tool_result.id
+                                }
+                            )
+
+                    # T063: Track updated todo_id for logging and context
+                    if tool_name == "update_todo" and detected_intent == "UPDATE":
+                        tool_args = getattr(event, 'arguments', {})
+                        if 'todo_id' in tool_args:
+                            context_state["last_updated_todo_id"] = tool_args['todo_id']
+                            logger.debug(
+                                f"Stored updated todo_id in context",
+                                extra={
+                                    "request_id": request_id,
+                                    "todo_id": tool_args['todo_id']
+                                }
+                            )
+
                     # T057 & T058: Format list_todos results and stream as response_delta events
                     if tool_name == "list_todos" and detected_intent == "LIST":
                         tool_result = event.result
+
+                        # T063: Store list results in context for potential todo_id inference
+                        # This allows subsequent update/delete operations in the same request
+                        # to reference "the first todo", "that task", etc.
+                        context_state["recent_list_results"] = tool_result
+                        logger.debug(
+                            f"Stored list results in context for todo_id inference",
+                            extra={
+                                "request_id": request_id,
+                                "result_count": len(tool_result) if isinstance(tool_result, list) else 0
+                            }
+                        )
 
                         # T057: Format list_todos results into natural language response
                         formatted_response = format_todo_list(tool_result)
@@ -427,6 +552,11 @@ async def chat_stream_generator(
                             "list_todos" in error_str or
                             ("list" in error_str and "todo" in error_str))
 
+        # T064: Check if error is related to update_todo operation (User Story 3)
+        is_update_operation = (detected_intent == "UPDATE" or
+                              "update_todo" in error_str or
+                              ("update" in error_str and "todo" in error_str))
+
         # MCP connection/server errors
         if "mcp" in error_str or "connection" in error_str:
             error_type = ErrorType.MCP_CONNECTION_ERROR
@@ -434,6 +564,8 @@ async def chat_stream_generator(
                 error_message = "Unable to create your todo - the todo service is currently unavailable. Please try again in a moment."
             elif is_list_operation:
                 error_message = "Unable to fetch your todos - the todo service is currently unavailable. Please try again in a moment."
+            elif is_update_operation:
+                error_message = "Unable to update your todo - the todo service is currently unavailable. Please try again in a moment."
             else:
                 error_message = "Failed to connect to the todo service. Please try again."
 
@@ -444,6 +576,8 @@ async def chat_stream_generator(
                 error_message = "Creating your todo is taking longer than expected. Please try again."
             elif is_list_operation:
                 error_message = "Fetching your todos is taking longer than expected. Please try again."
+            elif is_update_operation:
+                error_message = "Updating your todo is taking longer than expected. Please try again."
             else:
                 error_message = "Request timed out. Please try again."
 
@@ -454,6 +588,8 @@ async def chat_stream_generator(
                 error_message = "Failed to create your todo. The task details may be invalid or the database is unavailable. Please check your input and try again."
             elif is_list_operation:
                 error_message = "Failed to retrieve your todos. The database may be unavailable. Please try again."
+            elif is_update_operation:
+                error_message = "Failed to update your todo. The todo may not exist or the update parameters are invalid. Please check and try again."
             else:
                 error_message = "Tool execution failed. Please try again."
 
@@ -464,6 +600,8 @@ async def chat_stream_generator(
                 error_message = "Unable to create todo - the task details couldn't be processed. Please try rephrasing your request with clear title and due date."
             elif is_list_operation:
                 error_message = "Unable to list todos - the filter parameters couldn't be processed. Please try rephrasing your query (e.g., 'show my todos', 'what's due today')."
+            elif is_update_operation:
+                error_message = "Unable to update todo - the update parameters couldn't be processed. Please specify which todo to update and what changes to make (e.g., 'mark task #5 as complete')."
             else:
                 error_message = "Invalid request format. Please try rephrasing."
             recoverable = True  # User can fix and retry
@@ -475,6 +613,8 @@ async def chat_stream_generator(
                 error_message = "Unable to save your todo - database error occurred. Please try again."
             elif is_list_operation:
                 error_message = "Unable to retrieve your todos - database error occurred. Please try again."
+            elif is_update_operation:
+                error_message = "Unable to update your todo - database error occurred. Please try again."
             else:
                 error_message = "Database error occurred. Please try again."
 
@@ -486,6 +626,10 @@ async def chat_stream_generator(
         elif is_list_operation:
             error_message = "Sorry, I couldn't fetch your todo list. Please try again or rephrase your request."
 
+        # T064: Generic errors for update operations (User Story 3)
+        elif is_update_operation:
+            error_message = "Sorry, I couldn't update your todo. Please make sure you specify which todo to update and try again."
+
         # Log the specific error handling decision
         logger.info(
             f"Error categorized for user response",
@@ -495,6 +639,7 @@ async def chat_stream_generator(
                 "error_type": error_type.value,
                 "is_create_operation": is_create_operation,
                 "is_list_operation": is_list_operation,
+                "is_update_operation": is_update_operation,
                 "recoverable": recoverable
             }
         )

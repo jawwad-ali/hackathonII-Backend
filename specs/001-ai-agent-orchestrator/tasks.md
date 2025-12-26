@@ -158,15 +158,15 @@
 
 ### Implementation for User Story 3
 
-- [ ] T061 [US3] Update TodoAgent system instructions in src/agents/todo_agent.py to extract todo_id, updated fields from natural language for update operations
-- [ ] T062 [US3] Implement update intent detection logic in streaming handler in src/api/routes.py
-- [ ] T063 [US3] Add context inference for todo_id from recent conversation or list results in src/api/routes.py
-- [ ] T064 [US3] Add error handling for update_todo MCP tool failures in src/api/routes.py with user-friendly error messages
-- [ ] T065 [US3] Stream thinking event showing todo_id inference and field extraction reasoning in src/api/routes.py
-- [ ] T066 [US3] Stream tool_call event with update_todo and extracted arguments in src/api/routes.py
-- [ ] T067 [US3] Stream response_delta events with update confirmation message in src/api/routes.py
-- [ ] T068 [US3] Stream done event with final_output and tools_called=["update_todo"] in src/api/routes.py
-- [ ] T069 [US3] Log mcp_tool_called event with update_todo details in src/api/routes.py
+- [X] T061 [US3] Update TodoAgent system instructions in src/agents/todo_agent.py to extract todo_id, updated fields from natural language for update operations
+- [X] T062 [US3] Implement update intent detection logic in streaming handler in src/api/routes.py
+- [X] T063 [US3] Add context inference for todo_id from recent conversation or list results in src/api/routes.py
+- [X] T064 [US3] Add error handling for update_todo MCP tool failures in src/api/routes.py with user-friendly error messages
+- [X] T065 [US3] Stream thinking event showing todo_id inference and field extraction reasoning in src/api/routes.py
+- [X] T066 [US3] Stream tool_call event with update_todo and extracted arguments in src/api/routes.py
+- [X] T067 [US3] Stream response_delta events with update confirmation message in src/api/routes.py
+- [X] T068 [US3] Stream done event with final_output and tools_called=["update_todo"] in src/api/routes.py
+- [X] T069 [US3] Log mcp_tool_called event with update_todo details in src/api/routes.py
 
 **Checkpoint**: User Stories 1, 2, AND 3 complete - can create, query, and update todos independently
 

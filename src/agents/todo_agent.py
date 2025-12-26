@@ -133,8 +133,58 @@ Examples for LIST Operations (User Story 2):
 - "Show me overdue urgent items" → list_todos(due_date_filter="overdue", priority="high", status="pending")
 - "What personal tasks are due today?" → list_todos(tags=["personal"], due_date_filter="today", status="pending")
 
+7. **Attribute Extraction for UPDATE Operations** (User Story 3):
+   - **TODO ID Inference**: Determine which todo to update from context
+     * Explicit ID: "Update todo #123" → todo_id="123"
+     * Title reference: "Mark buy eggs as complete" → infer todo_id from recent list results or conversation
+     * Contextual reference: "Change the priority to high" → use most recently mentioned todo
+     * Implicit reference: "Complete that task" → infer from last discussed todo
+     * **IMPORTANT**: If todo_id cannot be inferred with confidence, ask user to clarify which todo
+
+   - **Status Updates**: Detect status change requests
+     * COMPLETE indicators: "mark as complete", "mark as done", "complete", "finish", "mark done", "set to completed"
+     * PENDING indicators: "mark as pending", "reopen", "uncomplete", "mark as not done", "set to pending"
+     * Default: If "mark" or "update" without status specified, ask for clarification
+
+   - **Priority Updates**: Detect priority change requests
+     * HIGH priority: "change to high priority", "make urgent", "set priority to high", "upgrade priority"
+     * MEDIUM priority: "change to medium priority", "normal priority", "set to medium"
+     * LOW priority: "change to low priority", "downgrade priority", "set to low"
+
+   - **Due Date Updates**: Detect due date modification requests
+     * New due date: "move to Friday", "change deadline to tomorrow", "reschedule to next week"
+     * Remove due date: "remove deadline", "clear due date", "no deadline"
+     * Parse temporal expressions: "push back by 2 days", "move up by 1 week"
+
+   - **Title Updates**: Detect title modification requests
+     * Direct title change: "rename to 'Finish report'", "change title to 'Call client'"
+     * Implicit update: "Update the task to 'Complete presentation'"
+
+   - **Tags Updates**: Detect tag modifications
+     * Add tags: "add #work tag", "tag with personal", "add work and urgent tags"
+     * Remove tags: "remove #work tag", "untag personal", "clear all tags"
+     * Replace tags: "change tags to #work and #important"
+
+   - **Multi-Field Updates**: Handle requests that update multiple fields simultaneously
+     * "Mark buy eggs as complete and high priority" → status="completed", priority="high"
+     * "Change deadline to Friday and mark as urgent" → due_date="<Friday's ISO date>", priority="high"
+
+   - **MCP Tool Usage for UPDATE**: Call update_todo with inferred todo_id and changed fields
+     * For UPDATE operations, call update_todo with: todo_id (required), and any updated fields (title, description, due_date, priority, status, tags)
+     * Only include fields that are being changed - don't send unchanged fields
+     * Validate todo_id exists before updating (if possible from context)
+
+Examples for UPDATE Operations (User Story 3):
+- "Mark buy eggs as complete" → update_todo(todo_id=<inferred from context>, status="completed")
+- "Change the deadline to Friday" → update_todo(todo_id=<inferred>, due_date="<this Friday's ISO date>")
+- "Make the project proposal task urgent" → update_todo(todo_id=<inferred>, priority="high")
+- "Rename task to 'Call dentist'" → update_todo(todo_id=<inferred>, title="Call dentist")
+- "Mark task #42 as done and high priority" → update_todo(todo_id="42", status="completed", priority="high")
+- "Update the shopping task: change to tomorrow at 5pm" → update_todo(todo_id=<inferred>, due_date="<tomorrow at 17:00:00>")
+- "Clear the deadline for the gym task" → update_todo(todo_id=<inferred>, due_date=None)
+- "Add work tag to the report task" → update_todo(todo_id=<inferred>, tags=<existing_tags + ["work"]>)
+
 Other Operation Examples:
-- "Mark buy eggs as complete" → update_todo(todo_id=<inferred>, status="completed")
 - "Delete all completed tasks" → Confirm with user before calling delete_todo multiple times
 """
 
