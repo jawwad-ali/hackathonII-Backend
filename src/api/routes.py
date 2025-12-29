@@ -181,6 +181,10 @@ async def chat_stream_generator(
         "is_cancellation_response": False,  # Flag set when user cancels an operation
     }
 
+    # Initialize detected_intent to None to avoid UnboundLocalError in exception handlers
+    # This variable tracks the detected user intent (CREATE, LIST, UPDATE, DELETE)
+    detected_intent = None
+
     try:
         # Log request received
         logger.info(
@@ -238,7 +242,8 @@ async def chat_stream_generator(
             )
 
         # Initialize MCP context and discover tools
-        context = get_runner_context()
+        # Fix: get_runner_context() returns a coroutine and must be awaited
+        context = await get_runner_context()
         mcp_servers = await discover_mcp_tools(context)
 
         logger.info(
@@ -289,8 +294,7 @@ async def chat_stream_generator(
 
         # Process stream events from OpenAI Agents SDK
         # Map events to ChatKit SSE format using enhanced mapper (T028)
-        # Track detected intent for User Story 1 (Create operations)
-        detected_intent = None
+        # Note: detected_intent is initialized at function start to avoid UnboundLocalError
         tool_start_times = {}  # Track tool execution start times for duration calculation
 
         async for event in result.stream_events():

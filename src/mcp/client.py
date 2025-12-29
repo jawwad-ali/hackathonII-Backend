@@ -94,7 +94,7 @@ async def _initialize_mcp_context_with_retry() -> RunnerContext:
 
             logger.info(
                 f"MCP context initialized successfully with servers: "
-                f"{list(mcp_config.mcp.servers.keys())}"
+                f"{list(mcp_config.servers.keys())}"
             )
 
             return context
@@ -209,7 +209,7 @@ async def discover_mcp_tools(context: RunnerContext) -> List[str]:
 
     try:
         # Get server names from config
-        server_names = list(context.mcp_config.mcp.servers.keys())
+        server_names = list(context.mcp_config.servers.keys())
 
         if not server_names:
             raise ValueError("No MCP servers configured in context")
