@@ -1,0 +1,35 @@
+$schema: https://raw.githubusercontent.com/lastmile-ai/mcp-agent/refs/heads/main/schema/mcp-agent.config.schema.json
+
+name: ai_agent_orchestrator
+execution_engine: asyncio
+
+logger:
+  transports: [console, file]
+  level: info
+  progress_display: true
+  path_settings:
+    path_pattern: "logs/mcp-agent-{unique_id}.jsonl"
+    unique_id: "timestamp"
+    timestamp_format: "%Y%m%d_%H%M%S"
+
+mcp:
+  servers:
+    todo_server:
+      # External FastMCP server handling PostgreSQL + SQLModel CRUD operations
+      # This command launches the todo server (will be configured in docker-compose.yml)
+      # For local development: uvx fastmcp run path/to/todo_server.py
+      # For containerized deployment: configure via environment variables
+      command: "uvx"
+      args: ["fastmcp", "run", "todo_server.py"]
+      env:
+        # Environment variables for todo_server (database connection, etc.)
+        # These will be injected at runtime via docker-compose.yml or .env
+        DATABASE_URL: "${TODO_SERVER_DATABASE_URL:-postgresql://user:password@localhost:5432/todos}"
+
+# Gemini model configuration (bridged via AsyncOpenAI)
+# API keys stored in mcp_agent.secrets.yaml (gitignored)
+# Default model is overridden by src/config.py using set_default_openai_client()
+openai:
+  # Not used - bridging to Gemini via custom AsyncOpenAI client in src/config.py
+  # This section exists for schema compliance but is overridden at runtime
+  default_model: "gemini-2.5-flash"

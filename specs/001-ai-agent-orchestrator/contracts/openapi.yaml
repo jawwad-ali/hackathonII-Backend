@@ -1,0 +1,426 @@
+openapi: 3.1.0
+info:
+  title: AI Agent Orchestrator API
+  description: |
+    Stateless FastAPI orchestrator that converts natural language todo requests
+    into structured MCP tool calls, streaming responses via ChatKit protocol.
+  version: 1.0.0
+  contact:
+    name: AI Agent Orchestrator Team
+servers:
+  - url: http://localhost:8000
+    description: Local development server
+  - url: https://api.example.com
+    description: Production server
+
+paths:
+  /chat/stream:
+    post:
+      summary: Stream conversational todo operations
+      description: |
+        Accepts natural language input and streams agent reasoning, tool calls,
+        and responses in real-time using Server-Sent Events (SSE).
+      operationId: streamChat
+      tags:
+        - Chat
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
+            examples:
+              create_todo:
+                summary: Create a todo from natural language
+                value:
+                  input: "Remind me to buy eggs tomorrow at 3pm"
+                  conversation_id: "conv_123abc"
+              list_todos:
+                summary: Query existing todos
+                value:
+                  input: "What's on my todo list for today?"
+                  conversation_id: "conv_123abc"
+              update_todo:
+                summary: Update an existing todo
+                value:
+                  input: "Mark the buy eggs task as complete"
+                  conversation_id: "conv_123abc"
+      responses:
+        '200':
+          description: Successful streaming response
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                format: binary
+                description: Server-Sent Events stream
+              examples:
+                successful_stream:
+                  summary: Successful todo creation stream
+                  value: |
+                    event: thinking
+                    data: {"content": "User wants to create a todo for buying eggs tomorrow at 3pm"}
+
+                    event: tool_call
+                    data: {"tool_name": "create_todo", "arguments": {"title": "buy eggs", "due_date": "2025-12-22T15:00:00", "priority": "medium"}, "status": "in_progress"}
+
+                    event: response_delta
+                    data: {"delta": "I've created a todo", "accumulated": "I've created a todo"}
+
+                    event: done
+                    data: {"final_output": "I've created a todo to buy eggs tomorrow at 3pm.", "tools_called": ["create_todo"], "success": true}
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /health:
+    get:
+      summary: Health check endpoint with circuit breaker status
+      description: |
+        Returns detailed service health status including circuit breaker states,
+        uptime metrics, and external dependency health. Used for monitoring,
+        load balancer health checks, and SLO compliance verification.
+      operationId: healthCheck
+      tags:
+        - System
+      responses:
+        '200':
+          description: Service is healthy (circuit breakers closed or half-open)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              examples:
+                all_healthy:
+                  summary: All systems operational
+                  value:
+                    status: "healthy"
+                    timestamp: "2025-12-21T12:00:00Z"
+                    uptime_seconds: 86400
+                    circuit_breakers:
+                      mcp_server:
+                        state: "closed"
+                        failure_count: 0
+                        last_failure: null
+                      gemini_api:
+                        state: "closed"
+                        failure_count: 0
+                        last_failure: null
+                    metrics:
+                      total_requests: 1523
+                      successful_requests: 1487
+                      failed_requests: 36
+                      success_rate: 0.976
+                degraded_mcp:
+                  summary: MCP circuit breaker open (degraded)
+                  value:
+                    status: "degraded"
+                    timestamp: "2025-12-21T12:00:00Z"
+                    uptime_seconds: 86400
+                    circuit_breakers:
+                      mcp_server:
+                        state: "open"
+                        failure_count: 5
+                        last_failure: "2025-12-21T11:59:45Z"
+                      gemini_api:
+                        state: "closed"
+                        failure_count: 0
+                        last_failure: null
+                    metrics:
+                      total_requests: 1523
+                      successful_requests: 1487
+                      failed_requests: 36
+                      success_rate: 0.976
+        '503':
+          description: Service is unhealthy (both circuit breakers open)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              examples:
+                unhealthy:
+                  summary: Both dependencies unavailable
+                  value:
+                    status: "unhealthy"
+                    timestamp: "2025-12-21T12:00:00Z"
+                    uptime_seconds: 86400
+                    circuit_breakers:
+                      mcp_server:
+                        state: "open"
+                        failure_count: 5
+                        last_failure: "2025-12-21T11:59:45Z"
+                      gemini_api:
+                        state: "open"
+                        failure_count: 3
+                        last_failure: "2025-12-21T11:59:50Z"
+                    metrics:
+                      total_requests: 1523
+                      successful_requests: 1450
+                      failed_requests: 73
+                      success_rate: 0.952
+
+components:
+  schemas:
+    ChatRequest:
+      type: object
+      required:
+        - input
+      properties:
+        input:
+          type: string
+          minLength: 1
+          maxLength: 5000
+          description: Natural language user request
+          example: "Remind me to buy eggs tomorrow at 3pm"
+        conversation_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Optional conversation ID for context tracking
+          example: "conv_123abc"
+        user_id:
+          type: string
+          nullable: true
+          description: Optional user identifier (for future multi-user support)
+          example: "user_456def"
+
+    StreamEvent:
+      oneOf:
+        - $ref: '#/components/schemas/ThinkingEvent'
+        - $ref: '#/components/schemas/ToolCallEvent'
+        - $ref: '#/components/schemas/ResponseDeltaEvent'
+        - $ref: '#/components/schemas/ErrorEvent'
+        - $ref: '#/components/schemas/DoneEvent'
+
+    ThinkingEvent:
+      type: object
+      required:
+        - event
+        - data
+      properties:
+        event:
+          type: string
+          enum: [thinking]
+        data:
+          type: object
+          properties:
+            content:
+              type: string
+              description: Agent reasoning step
+              example: "The user wants to create a todo for buying eggs tomorrow at 3pm."
+
+    ToolCallEvent:
+      type: object
+      required:
+        - event
+        - data
+      properties:
+        event:
+          type: string
+          enum: [tool_call]
+        data:
+          type: object
+          properties:
+            tool_name:
+              type: string
+              enum: [create_todo, list_todos, update_todo, delete_todo]
+              example: "create_todo"
+            arguments:
+              type: object
+              additionalProperties: true
+              example:
+                title: "buy eggs"
+                due_date: "2025-12-22T15:00:00"
+                priority: "medium"
+            status:
+              type: string
+              enum: [in_progress, completed, failed]
+              example: "in_progress"
+
+    ResponseDeltaEvent:
+      type: object
+      required:
+        - event
+        - data
+      properties:
+        event:
+          type: string
+          enum: [response_delta]
+        data:
+          type: object
+          properties:
+            delta:
+              type: string
+              description: Incremental text chunk
+              example: "I've created a todo to "
+            accumulated:
+              type: string
+              description: Full accumulated text so far
+              example: "I've created a todo to "
+
+    ErrorEvent:
+      type: object
+      required:
+        - event
+        - data
+      properties:
+        event:
+          type: string
+          enum: [error]
+        data:
+          type: object
+          properties:
+            error_type:
+              type: string
+              enum: [tool_execution_failed, mcp_connection_error, gemini_api_error, timeout, invalid_tool_arguments]
+              example: "tool_execution_failed"
+            message:
+              type: string
+              example: "Failed to connect to MCP server"
+            recoverable:
+              type: boolean
+              description: Whether the error is recoverable with retry
+              example: false
+
+    DoneEvent:
+      type: object
+      required:
+        - event
+        - data
+      properties:
+        event:
+          type: string
+          enum: [done]
+        data:
+          type: object
+          properties:
+            final_output:
+              type: string
+              example: "I've created a todo to buy eggs tomorrow at 3pm with medium priority."
+            tools_called:
+              type: array
+              items:
+                type: string
+              example: ["create_todo"]
+            success:
+              type: boolean
+              example: true
+
+    ValidationError:
+      type: object
+      properties:
+        detail:
+          type: array
+          items:
+            type: object
+            properties:
+              loc:
+                type: array
+                items:
+                  type: string
+              msg:
+                type: string
+              type:
+                type: string
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Internal server error"
+        message:
+          type: string
+          example: "An unexpected error occurred"
+        timestamp:
+          type: string
+          format: date-time
+
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - timestamp
+        - circuit_breakers
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+          description: |
+            Overall health status:
+            - healthy: All systems operational
+            - degraded: One circuit breaker open
+            - unhealthy: Multiple circuit breakers open
+        timestamp:
+          type: string
+          format: date-time
+          description: Current server time (ISO 8601 UTC)
+        uptime_seconds:
+          type: integer
+          description: Time since service started (seconds)
+          example: 86400
+        circuit_breakers:
+          type: object
+          description: Circuit breaker states for external dependencies
+          properties:
+            mcp_server:
+              $ref: '#/components/schemas/CircuitBreakerState'
+            gemini_api:
+              $ref: '#/components/schemas/CircuitBreakerState'
+        metrics:
+          type: object
+          description: Request statistics
+          properties:
+            total_requests:
+              type: integer
+              description: Total requests processed since startup
+            successful_requests:
+              type: integer
+              description: Successfully completed requests
+            failed_requests:
+              type: integer
+              description: Failed requests (errors, timeouts)
+            success_rate:
+              type: number
+              format: float
+              description: Success rate (0.0 to 1.0)
+              example: 0.976
+
+    CircuitBreakerState:
+      type: object
+      required:
+        - state
+        - failure_count
+      properties:
+        state:
+          type: string
+          enum: [closed, open, half_open]
+          description: |
+            Circuit breaker state:
+            - closed: Normal operation
+            - open: Failing fast (threshold exceeded)
+            - half_open: Testing recovery
+        failure_count:
+          type: integer
+          description: Consecutive failures since last success
+          example: 0
+        last_failure:
+          type: string
+          format: date-time
+          nullable: true
+          description: Timestamp of most recent failure (null if never failed)
+
+tags:
+  - name: Chat
+    description: Conversational todo operations
+  - name: System
+    description: System health and status
