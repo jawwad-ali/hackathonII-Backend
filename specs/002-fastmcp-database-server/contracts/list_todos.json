@@ -1,0 +1,31 @@
+{
+  "tool_name": "list_todos",
+  "description": "Retrieves all active todos from the database",
+  "input_schema": {
+    "type": "object",
+    "properties": {},
+    "description": "No input parameters required"
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "type": { "const": "text" },
+      "text": { "type": "string", "description": "Summary of results (e.g., 'Found 5 active todos')" },
+      "data": {
+        "type": "array",
+        "description": "List of active todo objects",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": { "type": "integer" },
+            "title": { "type": "string" },
+            "description": { "type": "string" },
+            "status": { "enum": ["active"] },
+            "created_at": { "type": "string", "format": "date-time" },
+            "updated_at": { "type": "string", "format": "date-time" }
+          }
+        }
+      }
+    }
+  }
+}

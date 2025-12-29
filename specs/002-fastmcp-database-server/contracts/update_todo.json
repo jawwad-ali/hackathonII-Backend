@@ -1,0 +1,47 @@
+{
+  "tool_name": "update_todo",
+  "description": "Updates an existing todo by ID",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "id": {
+        "type": "integer",
+        "description": "Todo ID to update"
+      },
+      "title": {
+        "type": "string",
+        "description": "New title (optional, max 200 chars)",
+        "maxLength": 200
+      },
+      "description": {
+        "type": "string",
+        "description": "New description (optional, max 2000 chars)",
+        "maxLength": 2000
+      },
+      "status": {
+        "enum": ["active", "completed", "archived"],
+        "description": "New status (optional)"
+      }
+    },
+    "required": ["id"]
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "type": { "const": "text" },
+      "text": { "type": "string", "description": "Update confirmation message" },
+      "data": {
+        "type": "object",
+        "description": "Updated todo object",
+        "properties": {
+          "id": { "type": "integer" },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "status": { "enum": ["active", "completed", "archived"] },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        }
+      }
+    }
+  }
+}

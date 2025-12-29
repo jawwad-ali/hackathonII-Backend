@@ -1,0 +1,40 @@
+{
+  "tool_name": "create_todo",
+  "description": "Creates a new todo item in the database",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "title": {
+        "type": "string",
+        "description": "Todo title (required, max 200 chars)",
+        "maxLength": 200
+      },
+      "description": {
+        "type": "string",
+        "description": "Optional todo description (max 2000 chars)",
+        "maxLength": 2000
+      }
+    },
+    "required": ["title"]
+  },
+  "output_schema": {
+    "type": "object",
+    "description": "MCP Content object with created todo",
+    "properties": {
+      "type": { "const": "text" },
+      "text": { "type": "string", "description": "Human-readable success message" },
+      "data": {
+        "type": "object",
+        "description": "Created todo object",
+        "properties": {
+          "id": { "type": "integer" },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "status": { "enum": ["active"] },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        }
+      }
+    }
+  }
+}

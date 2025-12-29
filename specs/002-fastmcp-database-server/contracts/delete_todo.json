@@ -1,0 +1,29 @@
+{
+  "tool_name": "delete_todo",
+  "description": "Permanently deletes a todo by ID (hard delete)",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "id": {
+        "type": "integer",
+        "description": "Todo ID to delete"
+      }
+    },
+    "required": ["id"]
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "type": { "const": "text" },
+      "text": { "type": "string", "description": "Deletion confirmation message" },
+      "data": {
+        "type": "object",
+        "description": "Deleted todo ID confirmation",
+        "properties": {
+          "id": { "type": "integer" },
+          "deleted": { "const": true }
+        }
+      }
+    }
+  }
+}
