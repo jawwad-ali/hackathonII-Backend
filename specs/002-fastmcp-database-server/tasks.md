@@ -59,13 +59,13 @@
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T012 [P] [US1] Write unit test for Todo model CRUD in tests/mcp_server/test_models.py testing create, read operations
-- [ ] T013 [P] [US1] Write integration test for create_todo tool in tests/mcp_server/test_tools.py verifying tool creates todo and returns correct MCP response format
-- [ ] T014 [P] [US1] Write integration test for list_todos tool in tests/mcp_server/test_tools.py verifying tool retrieves only active todos
+- [X] T012 [P] [US1] Write unit test for Todo model CRUD in tests/mcp_server/test_models.py testing create, read operations
+- [X] T013 [P] [US1] Write integration test for create_todo tool in tests/mcp_server/test_tools.py verifying tool creates todo and returns correct MCP response format
+- [X] T014 [P] [US1] Write integration test for list_todos tool in tests/mcp_server/test_tools.py verifying tool retrieves only active todos
 
 ### Implementation for User Story 1
 
-- [ ] T015 [US1] Implement create_todo tool in src/mcp_server/tools/create_todo.py using @mcp.tool decorator with session-per-tool pattern and CreateTodoInput validation
+- [X] T015 [US1] Implement create_todo tool in src/mcp_server/tools/create_todo.py using @mcp.tool decorator with session-per-tool pattern and CreateTodoInput validation
 - [ ] T016 [US1] Implement list_todos tool in src/mcp_server/tools/list_todos.py using @mcp.tool decorator with Session context manager, filtering by TodoStatus.ACTIVE
 - [ ] T017 [US1] Register create_todo and list_todos tools in src/mcp_server/server.py by importing and ensuring they use the shared mcp instance
 - [ ] T018 [US1] Add error handling for database integrity errors in create_todo tool (catch IntegrityError, raise ValueError with descriptive message)
