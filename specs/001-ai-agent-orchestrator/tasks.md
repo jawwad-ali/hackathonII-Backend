@@ -202,13 +202,13 @@
 
 **Purpose**: Handle ambiguous input, out-of-scope requests, tool failures, timeouts per spec edge cases
 
-- [ ] T081 [P] Implement ambiguous input detection in src/api/routes.py streaming clarifying questions when intent unclear
-- [ ] T082 [P] Implement out-of-scope request detection in src/api/routes.py informing user of todo-only capabilities
-- [ ] T083 [P] Add MCP server timeout handling (30s) in src/mcp/client.py with streaming status updates
-- [ ] T084 [P] Add Gemini API timeout handling in src/agents/todo_agent.py with retry and circuit breaker fallback
-- [ ] T085 Implement graceful degradation error messages in src/api/routes.py when circuit breakers open per FR-012
-- [ ] T086 Update /health endpoint in src/main.py to return 503 when both circuit breakers open per openapi.yaml
-- [ ] T087 Add input sanitization validation in src/api/schemas.py with control character stripping and UTF-8 validation per FR-013
+- [X] T081 [P] Implement ambiguous input detection in src/api/routes.py streaming clarifying questions when intent unclear
+- [X] T082 [P] Implement out-of-scope request detection in src/api/routes.py informing user of todo-only capabilities
+- [X] T083 [P] Add MCP server timeout handling (30s) in src/mcp/client.py with streaming status updates
+- [X] T084 [P] Add Gemini API timeout handling in src/agents/todo_agent.py with retry and circuit breaker fallback
+- [X] T085 Implement graceful degradation error messages in src/api/routes.py when circuit breakers open per FR-012
+- [X] T086 Update /health endpoint in src/main.py to return 503 when both circuit breakers open per openapi.yaml
+- [X] T087 Add input sanitization validation in src/api/schemas.py with control character stripping and UTF-8 validation per FR-013
 
 ---
 

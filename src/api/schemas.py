@@ -36,10 +36,14 @@ class ChatRequest(BaseModel):
     @classmethod
     def sanitize_message(cls, v: str) -> str:
         """
-        Sanitize user input by:
+        Sanitize user input per FR-013 requirements (T087):
         1. Validating UTF-8 encoding (Pydantic handles this automatically)
-        2. Stripping control characters (except newlines and tabs)
+        2. Stripping control characters (except newline, tab, carriage return)
         3. Normalizing whitespace
+
+        T087: Control character stripping implementation:
+        - Keep: \\n (newline, 0x0A), \\t (tab, 0x09), \\r (carriage return, 0x0D)
+        - Remove: All other control characters in ranges 0x00-0x1F and 0x7F-0x9F
 
         Args:
             v: Raw message string
@@ -50,11 +54,14 @@ class ChatRequest(BaseModel):
         Raises:
             ValueError: If message is empty after sanitization
         """
-        # Strip control characters (keep newline \n and tab \t)
-        # Control characters are in ranges: \x00-\x08, \x0B-\x0C, \x0E-\x1F, \x7F-\x9F
+        # T087: Strip control characters per FR-013
+        # Keep: \n (0x0A), \t (0x09), \r (0x0D)
+        # Remove ranges: 0x00-0x08 (before tab), 0x0B-0x0C (between newline and carriage return),
+        #                0x0E-0x1F (after carriage return), 0x7F-0x9F (extended control chars)
         sanitized = re.sub(r'[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F-\x9F]', '', v)
 
         # Normalize whitespace (replace multiple spaces with single space)
+        # This also handles tabs and newlines in the normalization
         sanitized = ' '.join(sanitized.split())
 
         # Validate not empty after sanitization

@@ -3,7 +3,7 @@ AI Agent Orchestrator for Todo Management
 FastAPI Application Entry Point
 """
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import logging
@@ -79,13 +79,18 @@ app.include_router(chat_router)
 
 
 @app.get("/health")
-async def health_check():
+async def health_check(response: Response):
     """
-    Health check endpoint with circuit breaker status.
+    Health check endpoint with circuit breaker status (T086).
 
     Returns detailed service health status including circuit breaker states,
     uptime metrics, and external dependency health. Used for monitoring,
     load balancer health checks, and SLO compliance verification.
+
+    T086: Returns 503 status code when both circuit breakers are open per openapi.yaml.
+
+    Args:
+        response: FastAPI Response object for setting status code
 
     Returns:
         dict: HealthResponse per openapi.yaml schema with:
@@ -93,11 +98,11 @@ async def health_check():
             - timestamp: Current server time (ISO 8601 UTC)
             - uptime_seconds: Time since service started
             - circuit_breakers: MCP and Gemini circuit breaker states
-            - metrics: Request statistics (placeholder for Phase 6)
+            - metrics: Request statistics
 
     Status Codes:
-        200: Service is healthy (all circuit breakers closed/half-open)
-        503: Service is unhealthy (both circuit breakers open)
+        200: Service is healthy or degraded (at least one dependency available)
+        503: Service is unhealthy (both circuit breakers open - no dependencies available)
     """
     # Get circuit breaker instances
     mcp_breaker = get_mcp_circuit_breaker()
@@ -159,8 +164,24 @@ async def health_check():
         "success_rate": round(success_rate, 2)
     }
 
+    # T086: Set HTTP status code based on health status per openapi.yaml
+    # - 200: healthy or degraded (at least one dependency available)
+    # - 503: unhealthy (both circuit breakers open - service cannot function)
+    if status == "unhealthy":
+        response.status_code = 503  # Service Unavailable
+        logger.warning(
+            "Health check: Service unhealthy - both circuit breakers open",
+            extra={
+                "status": status,
+                "mcp_state": mcp_state.state.value,
+                "gemini_state": gemini_state.state.value
+            }
+        )
+    else:
+        response.status_code = 200  # OK (healthy or degraded)
+
     # Build HealthResponse per openapi.yaml schema
-    response = {
+    health_response = {
         "status": status,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "uptime_seconds": uptime_seconds,
@@ -168,7 +189,7 @@ async def health_check():
         "metrics": metrics
     }
 
-    return response
+    return health_response
 
 
 @app.get("/")

@@ -182,20 +182,29 @@ def get_gemini_client() -> AsyncOpenAI:
     The client is wrapped with circuit breaker protection to prevent cascading failures
     when the Gemini API is unavailable or experiencing issues.
 
+    T084: Timeout configuration added to prevent hanging on slow API responses.
+    - Request timeout: 30 seconds (matches REQUEST_TIMEOUT setting)
+    - Connection timeout: 10 seconds for initial connection
+
     Note: The circuit breaker is applied at the agent execution level, not at client
     creation. This function creates a plain client that will be wrapped when used.
 
     Returns:
-        AsyncOpenAI: Configured async OpenAI client for Gemini
+        AsyncOpenAI: Configured async OpenAI client for Gemini with timeout
 
     Example:
         >>> client = get_gemini_client()
         >>> # Circuit breaker protection applied when agent makes API calls
+        >>> # Timeout of 30s enforced on all API requests
     """
     config = get_gemini_config()
+
+    # T084: Configure timeout for Gemini API requests
+    # This prevents the client from hanging indefinitely on slow/unresponsive API
     return AsyncOpenAI(
         api_key=config["api_key"],
-        base_url=config["base_url"]
+        base_url=config["base_url"],
+        timeout=settings.REQUEST_TIMEOUT,  # 30 seconds default
     )
 
 

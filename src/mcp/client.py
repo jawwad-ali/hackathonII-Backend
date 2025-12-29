@@ -3,6 +3,7 @@ MCP Client for Todo Server Integration
 Handles RunnerContext initialization and dynamic MCP tool discovery
 
 Includes circuit breaker and retry logic for resilience against MCP server failures.
+Includes timeout handling for MCP operations (30s default).
 """
 
 from agents_mcp import RunnerContext
@@ -11,6 +12,7 @@ from typing import List, Dict, Any
 import logging
 from pathlib import Path
 from datetime import timedelta
+import asyncio
 
 # Import resilience components
 from src.resilience.circuit_breaker import (
@@ -21,6 +23,10 @@ from src.resilience.circuit_breaker import (
 from src.resilience.retry import mcp_retry
 
 logger = logging.getLogger(__name__)
+
+# MCP Server timeout configuration (T083)
+# Default timeout for MCP operations: 30 seconds
+MCP_TIMEOUT_SECONDS = 30
 
 # Global circuit breaker for MCP server
 # Configuration:
@@ -57,11 +63,13 @@ async def _initialize_mcp_context_with_retry() -> RunnerContext:
     - Max attempts: 5
     - Exponential backoff: 1s → 2s → 4s → 8s → 16s (with jitter)
     - Max wait: 30 seconds
+    - Timeout: 30 seconds per attempt (T083)
 
     Raises:
         FileNotFoundError: If mcp_agent.config.yaml is not found
         ValueError: If config file is invalid or missing required fields
         ConnectionError: If MCP server cannot be reached (after retries)
+        TimeoutError: If MCP initialization exceeds timeout (after retries)
     """
     config_path = get_mcp_config_path()
 
@@ -74,19 +82,31 @@ async def _initialize_mcp_context_with_retry() -> RunnerContext:
     logger.info(f"Loading MCP configuration from {config_path}")
 
     try:
-        # Load configuration using agents_mcp config loader
-        settings = get_settings(str(config_path))
-        mcp_config: MCPSettings = settings.mcp
+        # T083: Wrap MCP initialization with timeout to prevent hanging
+        # This ensures the operation completes within 30 seconds or raises TimeoutError
+        async with asyncio.timeout(MCP_TIMEOUT_SECONDS):
+            # Load configuration using agents_mcp config loader
+            settings = get_settings(str(config_path))
+            mcp_config: MCPSettings = settings.mcp
 
-        # Create RunnerContext with the loaded configuration
-        context = RunnerContext(mcp_config=mcp_config)
+            # Create RunnerContext with the loaded configuration
+            context = RunnerContext(mcp_config=mcp_config)
 
-        logger.info(
-            f"MCP context initialized successfully with servers: "
-            f"{list(mcp_config.mcp.servers.keys())}"
+            logger.info(
+                f"MCP context initialized successfully with servers: "
+                f"{list(mcp_config.mcp.servers.keys())}"
+            )
+
+            return context
+
+    except asyncio.TimeoutError as e:
+        # T083: Timeout handling - convert to TimeoutError for retry logic
+        logger.warning(
+            f"MCP context initialization timed out after {MCP_TIMEOUT_SECONDS}s (will retry)"
         )
-
-        return context
+        raise TimeoutError(
+            f"MCP server initialization exceeded timeout of {MCP_TIMEOUT_SECONDS}s"
+        ) from e
 
     except (ConnectionError, TimeoutError, OSError) as e:
         # These errors trigger retry logic

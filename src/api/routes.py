@@ -18,6 +18,7 @@ from src.streaming.chatkit import StreamBuilder, ErrorType, ToolStatus, map_agen
 from src.agents.todo_agent import create_todo_agent
 from src.mcp.client import get_runner_context, discover_mcp_tools
 from src.observability.metrics import metrics_tracker
+from src.resilience.circuit_breaker import CircuitBreakerError
 
 logger = logging.getLogger(__name__)
 
@@ -791,6 +792,77 @@ async def chat_stream_generator(
                 "was_confirmation_response": context_state.get("is_confirmation_response", False),
                 "was_cancellation_response": context_state.get("is_cancellation_response", False)
             }
+        )
+
+    # T085: Graceful degradation for circuit breaker errors per FR-012
+    # Handle circuit breaker open state with user-friendly messages
+    except CircuitBreakerError as e:
+        logger.warning(
+            f"Circuit breaker open: {str(e)}",
+            extra={
+                "request_id": request_id,
+                "detected_intent": detected_intent,
+                "circuit_breaker": e.circuit_breaker_name if hasattr(e, 'circuit_breaker_name') else "unknown"
+            }
+        )
+
+        # Determine which circuit breaker is open based on error message
+        error_str = str(e).lower()
+        is_mcp_breaker = "mcp" in error_str or "todo" in error_str
+        is_gemini_breaker = "gemini" in error_str or "api" in error_str
+
+        # T085: Provide graceful degradation messages based on which service is unavailable
+        if is_mcp_breaker:
+            # MCP server circuit breaker open - cannot access todo data
+            error_type = ErrorType.MCP_CONNECTION_ERROR
+            error_message = (
+                "The todo management service is temporarily unavailable due to repeated failures. "
+                "Our system is automatically monitoring the service and will restore access once it's healthy. "
+                "Please try again in a few moments."
+            )
+            recoverable = True  # Will auto-recover when circuit breaker closes
+
+        elif is_gemini_breaker:
+            # Gemini API circuit breaker open - cannot process natural language
+            error_type = ErrorType.GEMINI_API_ERROR
+            error_message = (
+                "The AI language service is temporarily unavailable due to repeated failures. "
+                "Our system is automatically monitoring the service and will restore access once it's healthy. "
+                "Please try again in a few moments."
+            )
+            recoverable = True  # Will auto-recover when circuit breaker closes
+
+        else:
+            # Generic circuit breaker error
+            error_type = ErrorType.GEMINI_API_ERROR
+            error_message = (
+                "A critical service is temporarily unavailable. "
+                "Our system is working to restore access. Please try again shortly."
+            )
+            recoverable = True
+
+        # Stream error event with graceful degradation message
+        yield stream_builder.add_error(
+            error_type=error_type,
+            message=error_message,
+            recoverable=recoverable
+        )
+
+        # Log the graceful degradation
+        logger.info(
+            "Graceful degradation: Circuit breaker error handled with user-friendly message",
+            extra={
+                "request_id": request_id,
+                "error_type": error_type.value,
+                "recoverable": recoverable
+            }
+        )
+
+        # Track failed request in metrics
+        metrics_tracker.track_request_completed(
+            request_id=request_id,
+            success=False,
+            duration_ms=int((time.time() - time.time()) * 1000)
         )
 
     except Exception as e:
