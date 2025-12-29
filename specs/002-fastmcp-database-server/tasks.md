@@ -24,10 +24,10 @@
 
 **Purpose**: Project initialization and basic MCP server structure
 
-- [ ] T001 Create MCP server directory structure at src/mcp_server/ with subdirectories: tools/, and __init__.py files
-- [ ] T002 Create test directory structure at tests/mcp_server/ with __init__.py
-- [ ] T003 [P] Update .env.example with DATABASE_URL template using postgresql+asyncpg:// protocol and sslmode=require
-- [ ] T004 [P] Install dependencies via uv: fastmcp, sqlmodel, asyncpg, python-dotenv, pytest, pytest-asyncio
+- [x] T001 Create MCP server directory structure at src/mcp_server/ with subdirectories: tools/, and __init__.py files
+- [x] T002 Create test directory structure at tests/mcp_server/ with __init__.py
+- [x] T003 [P] Update .env.example with DATABASE_URL template using postgresql:// protocol (psycopg2 format) and sslmode=require
+- [x] T004 [P] Install dependencies via uv: fastmcp, sqlmodel, psycopg2-binary, python-dotenv, pytest
 
 ---
 
@@ -38,12 +38,12 @@
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
 - [ ] T005 Implement TodoStatus enum and Todo SQLModel entity in src/mcp_server/models.py with all 6 fields (id, title, description, status, created_at, updated_at)
-- [ ] T006 [P] Implement async database engine creation with connection pooling in src/mcp_server/database.py using create_async_engine with pool_size=5, max_overflow=10, pool_pre_ping=True
-- [ ] T007 [P] Implement async session factory and get_session dependency in src/mcp_server/database.py using AsyncSession with context manager
-- [ ] T008 Implement create_db_and_tables function in src/mcp_server/database.py using SQLModel.metadata.create_all via run_sync
+- [ ] T006 [P] Implement database engine creation with connection pooling in src/mcp_server/database.py using create_engine with pool_size=2, max_overflow=8, pool_pre_ping=True, pool_recycle=3600
+- [ ] T007 [P] Implement session factory and get_session dependency in src/mcp_server/database.py using Session with context manager
+- [ ] T008 Implement create_db_and_tables function in src/mcp_server/database.py using SQLModel.metadata.create_all (synchronous)
 - [ ] T009 [P] Implement Pydantic validation schemas in src/mcp_server/schemas.py: CreateTodoInput, UpdateTodoInput with field validators
-- [ ] T010 Create FastMCP server instance with lifespan in src/mcp_server/server.py including database initialization and cleanup
-- [ ] T011 [P] Setup pytest fixtures in tests/mcp_server/conftest.py for test database session using sqlite+aiosqlite:///:memory:
+- [ ] T010 Create FastMCP server instance in src/mcp_server/server.py including database initialization on startup
+- [ ] T011 [P] Setup pytest fixtures in tests/mcp_server/conftest.py for test database session using sqlite:///:memory:
 
 **Checkpoint**: Foundation ready - user story tool implementation can now begin in parallel
 
@@ -65,8 +65,8 @@
 
 ### Implementation for User Story 1
 
-- [ ] T015 [US1] Implement create_todo tool in src/mcp_server/tools/create_todo.py using @mcp.tool decorator, Depends(get_session), and CreateTodoInput validation
-- [ ] T016 [US1] Implement list_todos tool in src/mcp_server/tools/list_todos.py using @mcp.tool decorator, filtering by TodoStatus.ACTIVE
+- [ ] T015 [US1] Implement create_todo tool in src/mcp_server/tools/create_todo.py using @mcp.tool decorator with session-per-tool pattern and CreateTodoInput validation
+- [ ] T016 [US1] Implement list_todos tool in src/mcp_server/tools/list_todos.py using @mcp.tool decorator with Session context manager, filtering by TodoStatus.ACTIVE
 - [ ] T017 [US1] Register create_todo and list_todos tools in src/mcp_server/server.py by importing and ensuring they use the shared mcp instance
 - [ ] T018 [US1] Add error handling for database integrity errors in create_todo tool (catch IntegrityError, raise ValueError with descriptive message)
 - [ ] T019 [US1] Verify contract compliance for create_todo against specs/002-fastmcp-database-server/contracts/create_todo.json
@@ -160,9 +160,9 @@
 - [ ] T050 Run full test suite with coverage: uv run pytest tests/mcp_server/ --cov=src/mcp_server --cov-report=term-missing and verify >80% coverage
 - [ ] T051 [P] Add input sanitization validation to prevent SQL injection in search_todos keyword parameter
 - [ ] T052 Test server startup using quickstart.md instructions and verify all 5 tools are registered
-- [ ] T053 [P] Add main() function and __main__ block to src/mcp_server/server.py for asyncio.run(main()) execution
+- [ ] T053 [P] Add main() function and __main__ block to src/mcp_server/server.py for direct execution
 - [ ] T054 Test MCP server with MCP Inspector to verify all tools work via stdio protocol
-- [ ] T055 [P] Update pyproject.toml with all production dependencies (fastmcp, sqlmodel, asyncpg, python-dotenv) and dev dependencies (pytest, pytest-asyncio)
+- [ ] T055 [P] Update pyproject.toml with all production dependencies (fastmcp, sqlmodel, psycopg2-binary, python-dotenv) and dev dependencies (pytest)
 
 ---
 
@@ -283,24 +283,25 @@ With multiple developers:
 - Verify tests fail (RED) before implementing (GREEN)
 - Commit after each task or logical group
 - Stop at any checkpoint to validate story independently
-- All database operations MUST be async (no blocking I/O)
+- All database operations use synchronous psycopg2 driver with thread-safe connection pooling
 - All tools MUST return MCP-compliant Content objects (handled automatically by FastMCP)
-- Connection string MUST include `postgresql+asyncpg://` protocol and `?sslmode=require`
+- Connection string MUST use `postgresql://` protocol (psycopg2 format) with `?sslmode=require`
 
 ---
 
-## Acceptance Criteria (from TASK_002.md)
+## Acceptance Criteria
 
 **Per Task**:
 - Every tool must return a descriptive string or JSON for the AI Agent to consume ✅
-- No synchronous database calls; everything must use await ✅
+- All database operations use synchronous psycopg2 with thread-safe connection pooling ✅
 
 **Overall**:
 - All 5 MCP tools (create, list, update, delete, search) registered and functional
-- Database initialization works with Neon PostgreSQL (including cold start)
+- Database initialization works with PostgreSQL (Neon or local) using psycopg2
 - Test coverage >80% for business logic
 - All contracts verified against JSON schemas in contracts/ directory
 - Server runs in stdio mode and responds to MCP client tool invocations
+- Connection pooling configured (min=2, max=10 connections)
 
 ---
 
