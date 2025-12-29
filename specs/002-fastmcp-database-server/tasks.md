@@ -37,13 +37,13 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T005 Implement TodoStatus enum and Todo SQLModel entity in src/mcp_server/models.py with all 6 fields (id, title, description, status, created_at, updated_at)
-- [ ] T006 [P] Implement database engine creation with connection pooling in src/mcp_server/database.py using create_engine with pool_size=2, max_overflow=8, pool_pre_ping=True, pool_recycle=3600
-- [ ] T007 [P] Implement session factory and get_session dependency in src/mcp_server/database.py using Session with context manager
-- [ ] T008 Implement create_db_and_tables function in src/mcp_server/database.py using SQLModel.metadata.create_all (synchronous)
-- [ ] T009 [P] Implement Pydantic validation schemas in src/mcp_server/schemas.py: CreateTodoInput, UpdateTodoInput with field validators
-- [ ] T010 Create FastMCP server instance in src/mcp_server/server.py including database initialization on startup
-- [ ] T011 [P] Setup pytest fixtures in tests/mcp_server/conftest.py for test database session using sqlite:///:memory:
+- [x] T005 Implement TodoStatus enum and Todo SQLModel entity in src/mcp_server/models.py with all 6 fields (id, title, description, status, created_at, updated_at)
+- [x] T006 [P] Implement database engine creation with connection pooling in src/mcp_server/database.py using create_engine with pool_size=2, max_overflow=8, pool_pre_ping=True, pool_recycle=3600
+- [x] T007 [P] Implement session factory and get_session dependency in src/mcp_server/database.py using Session with context manager
+- [x] T008 Implement create_db_and_tables function in src/mcp_server/database.py using SQLModel.metadata.create_all (synchronous)
+- [x] T009 [P] Implement Pydantic validation schemas in src/mcp_server/schemas.py: CreateTodoInput, UpdateTodoInput with field validators
+- [x] T010 Create FastMCP server instance in src/mcp_server/server.py including database initialization on startup
+- [x] T011 [P] Setup pytest fixtures in tests/mcp_server/conftest.py for test database session using sqlite:///:memory:
 
 **Checkpoint**: Foundation ready - user story tool implementation can now begin in parallel
 
