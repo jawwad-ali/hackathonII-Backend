@@ -1,68 +1,68 @@
 # Claude Code Instructions - AI Agent Orchestrator
 
 > **Project**: AI Agent Orchestrator for Todo Management
-> **Purpose**: Conversational CRUD interface using ChatKit, OpenAI Agents SDK, and MCP tools
+> **Stack**: FastAPI + Gemini 2.5 Flash + PostgreSQL + FastMCP
 > **Version**: 1.0.0
-
-This file defines how Claude Code should assist with this project. It combines Spec-Driven Development (SDD) workflow with project-specific technical constraints.
-
----
-
-## Table of Contents
-
-1. [Project Overview](#project-overview)
-2. [Core Principles (NON-NEGOTIABLE)](#core-principles-non-negotiable)
-3. [Development Workflow](#development-workflow)
-4. [AI Agent Guidelines](#ai-agent-guidelines)
-5. [Code Standards](#code-standards)
-6. [Project Structure](#project-structure)
-7. [Troubleshooting](#troubleshooting)
-
----
 
 ## Project Overview
 
-### What We're Building
+An AI-powered todo management system using natural language interface. Connects conversational AI to CRUD operations via MCP (Model Context Protocol).
 
-An **AI Agent Orchestrator** that connects a ChatKit conversational frontend to Todo management tools via MCP (Model Context Protocol). The system interprets natural language user intent and coordinates CRUD operations on todos.
+### Tech Stack
 
-**Core Tech Stack**:
-- **Frontend Interface**: OpenAI ChatKit (conversational UI)
-- **Agent Orchestration**: OpenAI Agents SDK
-- **Backend API**: FastAPI
-- **Database**: PostgreSQL + SQLModel (Pydantic integration)
-- **LLM Provider**: Google Gemini (`gemini-2.5-flash`) via AsyncOpenAI bridge
-- **Tool Protocol**: MCP (Model Context Protocol) for todo operations
+**Core Technologies:**
+- **Backend**: FastAPI 0.115+ (async Python web framework)
+- **LLM Provider**: Google Gemini 2.5 Flash (via OpenAI SDK bridge)
+- **AI Framework**: OpenAI Agents SDK 0.6.4+, FastMCP 0.0.8+
+- **Database**: PostgreSQL + SQLModel (Pydantic + SQLAlchemy ORM)
+- **Package Manager**: uv (fast Python package installer)
+- **Testing**: pytest with fixtures and integration tests
+- **Runtime**: Python 3.11+
+
+**Supporting Libraries:**
+- `pydantic` - Data validation and settings management
+- `python-dotenv` - Environment variable management
+- `tenacity` - Retry logic with exponential backoff
+- `python-json-logger` - Structured JSON logging
+- `uvicorn` - ASGI server with hot reload
 
 ### Architecture
 
 ```
-User → ChatKit → FastAPI → Agent Orchestrator → MCP Tools → PostgreSQL
-                    ↓
-              Gemini 2.5 Flash
-              (via AsyncOpenAI)
+User Input (Natural Language)
+    ↓
+FastAPI Endpoints (/chat/stream)
+    ↓
+OpenAI Agents SDK (orchestration)
+    ↓
+Gemini 2.5 Flash (intent parsing)
+    ↓
+FastMCP Tools (CRUD operations)
+    ↓
+PostgreSQL (persistence)
 ```
 
-**Key Components**:
+**Key Components:**
+- `src/main.py` - FastAPI application, middleware, health checks
+- `src/config.py` - Pydantic settings, circuit breaker config
 - `src/agents/todo_agent.py` - Main orchestrator agent
-- `src/api/routes.py` - FastAPI streaming endpoints
-- `src/streaming/chatkit.py` - ChatKit integration
-- `src/mcp/client.py` - MCP client for tool execution
-- `src/config.py` - Environment and model configuration
+- `src/mcp_server/` - FastMCP server and tool implementations
+- `src/resilience/` - Circuit breaker, retry patterns
+- `src/observability/` - Structured logging, metrics tracking
 
 ---
 
-## Core Principles (NON-NEGOTIABLE)
+## Core Principles
 
-### 1. Environment-First Rule ⚠️
+### 1. Environment-First Development ⚠️
 
-**ALWAYS verify `.venv` is active before ANY command.**
+**ALWAYS activate `.venv` before ANY command.**
 
 ```bash
-# Activate FIRST (every time)
-# Windows:
+# Windows
 .venv\Scripts\activate
-# Unix/macOS:
+
+# Unix/macOS
 source .venv/bin/activate
 
 # Then run commands
@@ -70,80 +70,64 @@ uv pip install <package>
 uv run pytest
 ```
 
-**Rationale**: Environment isolation prevents dependency conflicts and ensures reproducibility. 80% of "works on my machine" issues stem from environment mismanagement.
-
-**Enforcement**:
-- ❌ NEVER suggest `python`, `pip`, or `uv` commands without verifying environment
-- ✅ ALWAYS check/activate `.venv` first, then suggest commands
-
----
+❌ **NEVER** suggest bare `python`, `pip`, or `pytest` without verifying environment
+✅ **ALWAYS** verify `.venv` is active first
 
 ### 2. uv-Exclusive Package Management ⚠️
 
-**ONLY `uv` is authorized.** pip, poetry, conda are **PROHIBITED**.
+**ONLY `uv` is authorized.** No pip, poetry, or conda.
 
 ```bash
-# ✅ CORRECT
+# Install dependencies
 uv pip install fastapi
-uv run uvicorn src.main:app --reload
-uv run pytest
 
-# ❌ WRONG
-pip install fastapi
-poetry add fastapi
-python -m pip install fastapi
+# Run application
+uv run uvicorn src.main:app --reload
+
+# Run tests
+uv run pytest
 ```
 
-**Rationale**: uv is 10-100x faster, deterministic, and prevents dependency hell.
+All dependencies in `pyproject.toml`, locked in `requirements.txt`.
 
-**Enforcement**:
-- All dependencies in `pyproject.toml`
-- Lock file: `requirements.txt` (via `uv pip compile`)
+### 3. Context7 Documentation Protocol ⚠️
 
----
+**Before implementing with core libraries, fetch current docs via Context7 MCP server.**
 
-### 3. MCP Source of Truth Protocol ⚠️
-
-**Before ANY implementation code, fetch current docs via MCP context-7 server.**
-
-**Required Libraries**:
+**Core Libraries Requiring Context7 Lookup:**
 - FastAPI
 - OpenAI Agents SDK
-- OpenAI ChatKit
+- FastMCP (Official MCP SDK)
 - SQLModel
-- Official MCP SDK
-- PostgreSQL client (asyncpg/psycopg)
+- PostgreSQL client (psycopg2/asyncpg)
+- Pydantic
 
-**Workflow**:
+**Workflow:**
 ```python
 # Step 1: Resolve library ID
 mcp__context7__resolve-library-id → '/tiangolo/fastapi'
 
-# Step 2: Fetch docs
-mcp__context7__get-library-docs(
-    context7CompatibleLibraryID='/tiangolo/fastapi',
-    mode='code',  # 'code' for API, 'info' for concepts
-    topic='routing'
+# Step 2: Query documentation
+mcp__context7__query-docs(
+    libraryId='/tiangolo/fastapi',
+    query='how to create streaming endpoints'
 )
-
-# Step 3: Document in plan.md
 ```
 
 **Rationale**: Libraries evolve. Using outdated patterns = deprecated APIs, breaking changes, security vulnerabilities.
 
-**Enforcement**:
-- ❌ NEVER rely on internal knowledge for these 6 libraries
-- ✅ ALWAYS fetch current docs, document in `plan.md` Technical Context
+**Enforcement:**
+- ❌ NEVER rely on internal knowledge for these libraries
+- ✅ ALWAYS fetch current docs before implementation
+- Document findings in planning artifacts
 
----
-
-### 4. Gemini-Only Model Architecture ⚠️
+### 4. Gemini-Only Model Policy ⚠️
 
 **OpenAI models are PROHIBITED.** Use Gemini via AsyncOpenAI bridge.
 
 ```python
 # ✅ CORRECT
-from openai import AsyncOpenAI  # Agents SDK version
+from openai import AsyncOpenAI
 
 client = AsyncOpenAI(
     api_key=os.getenv("GEMINI_API_KEY"),
@@ -151,195 +135,21 @@ client = AsyncOpenAI(
 )
 
 response = await client.chat.completions.create(
-    model="gemini-2.5-flash",  # PRIMARY MODEL
+    model="gemini-2.5-flash",  # Primary model
     messages=[...],
     tools=[...]
 )
 
 # ❌ WRONG
-from openai import OpenAI  # Standard client
-model="gpt-4"  # OpenAI models
+model="gpt-4"
 model="gpt-3.5-turbo"
 ```
 
-**Rationale**: Gemini provides cost efficiency, speed, and quality for conversational CRUD operations.
+**Models:**
+- Primary: `gemini-2.5-flash` (low latency, cost-effective)
+- Escalation: `gemini-2.5-pro` (complex reasoning, requires approval)
 
-**Model Selection**:
-- **Primary**: `gemini-2.5-flash` (low latency, cost-effective)
-- **Escalation**: `gemini-2.5-pro` (complex reasoning, requires approval)
-
----
-
-### 5. Pre-Flight Skills Requirement ⚠️
-
-**Run Claude Code Skills BEFORE Agents SDK implementation.**
-
-**Required Execution Order**:
-```bash
-1. /sp.specify  # Create spec.md (user stories, acceptance criteria)
-2. /sp.plan     # Create plan.md (architecture, MCP docs fetching)
-3. /sp.tasks    # Create tasks.md (implementation breakdown)
-```
-
-**Rationale**: Skills enforce structured planning. Jumping to code without specs = scope creep, poor design, inconsistent behavior.
-
-**Enforcement**:
-- Skills outputs (spec.md, plan.md, tasks.md) guide all implementation
-- Agents SDK code MUST reference these artifacts
-
----
-
-### 6. Test-First Development
-
-**Write tests BEFORE implementation where feasible.**
-
-**Priority Areas**:
-- API endpoints (contract tests)
-- Database models (CRUD tests)
-- Agent tools (integration tests)
-- Conversational flows (e2e tests)
-
-```bash
-# Run tests
-uv run pytest
-
-# With coverage
-uv run pytest --cov=src --cov-report=term-missing
-```
-
-**Target**: >80% coverage for business logic
-
----
-
-## Development Workflow
-
-### Standard Development Cycle
-
-```bash
-# 1. Activate Environment (REQUIRED)
-.venv\Scripts\activate  # Windows
-source .venv/bin/activate  # Unix/macOS
-
-# 2. Run Planning Skills (for new features)
-/sp.specify  # Define user stories
-/sp.plan     # Design architecture + fetch MCP docs
-/sp.tasks    # Break down tasks
-
-# 3. Fetch MCP Documentation
-# (via context-7 MCP server, document in plan.md)
-
-# 4. Implement (follow tasks.md order)
-# - Write tests first
-# - Verify environment before each command
-
-# 5. Test
-uv run pytest
-
-# 6. Run Application
-uv run uvicorn src.main:app --reload
-```
-
-### Pre-Commit Checklist
-
-- [ ] `.venv` active during all development
-- [ ] All deps installed via `uv pip install`
-- [ ] MCP docs fetched for new library usage
-- [ ] AsyncOpenAI configured with Gemini endpoint
-- [ ] Model is `gemini-2.5-flash` (not OpenAI models)
-- [ ] Tests pass (`uv run pytest`)
-- [ ] No `.env` in commit
-- [ ] Skills artifacts updated (spec.md, plan.md, tasks.md)
-
----
-
-## AI Agent Guidelines
-
-### How Claude Code Should Help
-
-**Role**: Expert AI assistant for Spec-Driven Development (SDD) on this project.
-
-**Success Metrics**:
-- All outputs follow user intent
-- Prompt History Records (PHRs) created automatically
-- Architectural Decision Records (ADRs) suggested for significant decisions
-- Changes are small, testable, with precise code references
-
-### Task Execution Contract
-
-For every request, Claude MUST:
-
-1. **Confirm surface & success criteria** (1 sentence)
-2. **List constraints, invariants, non-goals**
-3. **Produce artifact** with acceptance checks (tests/checklists)
-4. **Add follow-ups & risks** (max 3 bullets)
-5. **Create PHR** in `history/prompts/` (constitution/feature/general)
-6. **Suggest ADR** if architecturally significant decision made
-
-### Human-as-Tool Strategy
-
-Invoke the user for:
-1. **Ambiguous Requirements**: Ask 2-3 clarifying questions
-2. **Unforeseen Dependencies**: Surface and ask for prioritization
-3. **Architectural Uncertainty**: Present options with tradeoffs
-4. **Completion Checkpoints**: Summarize progress, confirm next steps
-
-### Default Policies
-
-- **Clarify first**: Keep business understanding separate from technical plan
-- **Don't invent APIs**: Ask targeted questions if contracts missing
-- **No secrets**: Use `.env`, never hardcode tokens
-- **Smallest viable diff**: Don't refactor unrelated code
-- **Cite code**: Use `file_path:line_number` references
-- **Keep reasoning private**: Output only decisions, artifacts, justifications
-
-### Prompt History Records (PHRs)
-
-**After completing work, MUST create PHR.**
-
-**When to create**:
-- Implementation work (code changes, features)
-- Planning/architecture discussions
-- Debugging sessions
-- Spec/task/plan creation
-- Multi-step workflows
-
-**Process**:
-1. Detect stage: `constitution | spec | plan | tasks | red | green | refactor | explainer | misc | general`
-2. Generate title (3-7 words) → slug
-3. Route to:
-   - `history/prompts/constitution/`
-   - `history/prompts/<feature-name>/`
-   - `history/prompts/general/`
-4. Fill template from `.specify/templates/phr-template.prompt.md`
-5. Validate (no placeholders, complete prompt text, correct path)
-6. Report: ID, path, stage, title
-
-**Skip PHRs only for**: `/sp.phr` command itself
-
-### Architectural Decision Records (ADRs)
-
-**Suggest (never auto-create) when ALL true**:
-- **Impact**: Long-term consequences (framework, model, data, security)
-- **Alternatives**: Multiple viable options considered
-- **Scope**: Cross-cutting, influences system design
-
-**Suggestion text**:
-```
-📋 Architectural decision detected: [brief description]
-   Document reasoning and tradeoffs? Run `/sp.adr [decision-title]`
-```
-
-**Examples requiring ADRs**:
-- Switching model provider (Gemini → other)
-- Database change (PostgreSQL → MongoDB)
-- Conversation flow architecture changes
-- New agent capabilities beyond CRUD
-
----
-
-## Code Standards
-
-### Security & Secrets
+### 5. Security & Secrets
 
 ```bash
 # ❌ NEVER
@@ -351,64 +161,190 @@ api_key = os.getenv("GEMINI_API_KEY")
 DATABASE_URL = os.getenv("DATABASE_URL")
 ```
 
-**Requirements**:
-- All secrets in `.env`
+**Requirements:**
+- All secrets in `.env` (never committed)
 - Provide `.env.example` template
 - Add `.env` to `.gitignore`
+- Use `python-dotenv` to load environment variables
 
-### Input Validation
+---
 
-**MUST**:
-- Validate at FastAPI endpoints (Pydantic models)
-- Sanitize conversational input (prevent injection)
-- Apply rate limiting (prevent abuse)
+## Best Practices Being Followed
 
-### Patterns for This Project
+### Resilience Patterns
 
-**Agent Tool Definition**:
+**Circuit Breaker:**
+- Prevents cascading failures for MCP server and Gemini API
+- States: CLOSED (normal) → OPEN (fail-fast) → HALF-OPEN (testing)
+- Configurable thresholds and recovery timeouts
+- Integrated in health check endpoints
+
+**Retry Logic:**
+- Exponential backoff with `tenacity`
+- Configurable max attempts and delays
+- Applied to external API calls
+
+**Example:**
 ```python
-# src/agents/tool_definitions.py
-from openai import AsyncOpenAI
+from src.resilience.circuit_breaker import CircuitBreaker, CircuitBreakerConfig
+from datetime import timedelta
 
-async def create_todo_tool(title: str, due_date: str = None, priority: str = "medium"):
-    """
-    Creates a new todo item via MCP.
-
-    Args:
-        title: Todo description
-        due_date: ISO date string (optional)
-        priority: low/medium/high
-    """
-    # Call MCP client
-    result = await mcp_client.create_todo(title, due_date, priority)
-    return result
-```
-
-**Streaming Response**:
-```python
-# src/api/routes.py
-from fastapi import FastAPI
-from fastapi.responses import StreamingResponse
-
-@app.post("/chat/stream")
-async def chat_stream(request: ChatRequest):
-    async def generate():
-        async for chunk in agent.process_stream(request.message):
-            yield f"data: {chunk}\n\n"
-
-    return StreamingResponse(generate(), media_type="text/event-stream")
-```
-
-**ChatKit Integration**:
-```python
-# src/streaming/chatkit.py
-from chatkit import ChatKit
-
-chatkit = ChatKit(
-    model="gemini-2.5-flash",
-    tools=[create_todo_tool, list_todos_tool, update_todo_tool, delete_todo_tool]
+breaker = CircuitBreaker(
+    name="gemini_api",
+    config=CircuitBreakerConfig(
+        failure_threshold=3,
+        recovery_timeout=timedelta(seconds=60)
+    )
 )
+
+result = await breaker.call(api_function, *args)
 ```
+
+### Observability
+
+**Structured JSON Logging:**
+- Python-json-logger for machine-readable logs
+- Request ID correlation via middleware
+- Log levels: DEBUG, INFO, WARNING, ERROR, CRITICAL
+
+**Metrics Tracking:**
+- Total requests, successful/failed counts
+- Success rate calculation
+- Circuit breaker state monitoring
+
+**Health Checks:**
+- `/health` endpoint with detailed status
+- Circuit breaker states (MCP, Gemini)
+- Uptime metrics
+- Returns 503 when both circuit breakers open
+
+### Database Patterns
+
+**SQLModel (Pydantic + SQLAlchemy):**
+- Type-safe ORM with Pydantic validation
+- Automatic timestamp management (created_at, updated_at)
+- Enum-based status fields (TodoStatus)
+- Field validation (max_length, min_length, indexes)
+
+**Example:**
+```python
+from sqlmodel import Field, SQLModel
+from enum import Enum
+
+class TodoStatus(str, Enum):
+    ACTIVE = "active"
+    COMPLETED = "completed"
+    ARCHIVED = "archived"
+
+class Todo(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    title: str = Field(..., max_length=200, index=True)
+    status: TodoStatus = Field(default=TodoStatus.ACTIVE)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+```
+
+### Testing Strategy
+
+**Test-Driven Development:**
+- Write tests BEFORE implementation
+- Integration tests with database fixtures
+- Target >80% coverage for business logic
+
+**Example Test Structure:**
+```python
+def test_create_todo_with_title_only(session):
+    """Test creating a todo with minimal input."""
+    from src.mcp_server.tools.create_todo import create_todo
+
+    result = create_todo(title="Call dentist", _test_session=session)
+
+    # Verify database persistence
+    statement = select(Todo).where(Todo.title == "Call dentist")
+    todo = session.exec(statement).first()
+
+    assert todo is not None
+    assert todo.status == TodoStatus.ACTIVE
+```
+
+**Pytest Fixtures:**
+- `session` - Database session with rollback
+- `sample_todo` - Single active todo
+- `sample_todos` - Collection with various statuses
+
+### FastAPI Best Practices
+
+**Middleware Stack:**
+- CORS middleware for cross-origin requests
+- Request ID middleware for tracing
+- Structured logging integration
+
+**Async/Await:**
+- All endpoints and database operations are async
+- Proper async context management with `asynccontextmanager`
+
+**API Documentation:**
+- Auto-generated OpenAPI/Swagger docs at `/docs`
+- Pydantic schemas for request/response validation
+
+### FastMCP Server Patterns
+
+**Tool Registration:**
+```python
+from fastmcp import FastMCP
+
+mcp = FastMCP("TodoDatabaseServer")
+
+@mcp.tool()
+def create_todo(title: str, description: str = None) -> str:
+    """Create a new todo item."""
+    # Tool implementation
+    return f"Todo created: {title}"
+```
+
+**Database Initialization:**
+- Tables created on server startup
+- Automatic schema management with SQLModel
+
+---
+
+## Development Workflow
+
+### Standard Development Cycle
+
+```bash
+# 1. Activate Environment (REQUIRED)
+.venv\Scripts\activate
+
+# 2. Install/Update Dependencies
+uv pip install -e .
+
+# 3. Configure Environment
+cp .env.example .env
+# Edit .env with actual values
+
+# 4. Run Tests (TDD approach)
+uv run pytest
+uv run pytest --cov=src --cov-report=term-missing
+
+# 5. Run Application
+uv run uvicorn src.main:app --reload
+
+# 6. Access Endpoints
+# API: http://localhost:8000
+# Docs: http://localhost:8000/docs
+# Health: http://localhost:8000/health
+```
+
+### Pre-Commit Checklist
+
+- [ ] `.venv` active during development
+- [ ] All deps installed via `uv pip install`
+- [ ] Context7 docs fetched for new library usage
+- [ ] Model is `gemini-2.5-flash` (not OpenAI)
+- [ ] Tests pass (`uv run pytest`)
+- [ ] No secrets in code (use `.env`)
+- [ ] Type hints on new functions
+- [ ] Docstrings on public APIs
 
 ---
 
@@ -416,80 +352,37 @@ chatkit = ChatKit(
 
 ```
 hackathonII-backend/
-├── .claude/
-│   ├── commands/           # Slash commands (/sp.*)
-│   └── skills/            # Claude Code skills
-├── .specify/
-│   ├── memory/
-│   │   └── constitution.md    # Project principles (detailed)
-│   └── templates/         # Spec, plan, task, ADR templates
-├── history/
-│   ├── prompts/          # Prompt History Records
-│   │   ├── constitution/
-│   │   ├── 001-ai-agent-orchestrator/
-│   │   └── general/
-│   └── adr/              # Architecture Decision Records
-├── specs/
-│   └── 001-ai-agent-orchestrator/
-│       ├── spec.md       # Feature specification
-│       ├── plan.md       # Implementation plan
-│       └── tasks.md      # Task breakdown
 ├── src/
-│   ├── agents/
-│   │   ├── todo_agent.py       # Main orchestrator
-│   │   └── tool_definitions.py # MCP tool wrappers
-│   ├── api/
-│   │   ├── routes.py           # FastAPI endpoints
-│   │   └── schemas.py          # Request/response models
-│   ├── mcp/
-│   │   └── client.py           # MCP client
-│   ├── streaming/
-│   │   └── chatkit.py          # ChatKit integration
-│   ├── config.py               # Environment config
-│   └── main.py                 # FastAPI app
-├── tests/                # Pytest tests
-├── .env                  # Secrets (gitignored)
-├── .env.example          # Template
-├── pyproject.toml        # Dependencies
-├── requirements.txt      # Locked deps (uv pip compile)
-├── CLAUDE.md            # This file
-└── README.md            # User documentation
+│   ├── main.py                    # FastAPI app, health checks
+│   ├── config.py                  # Settings, circuit breakers
+│   ├── agents/                    # AI agent orchestration
+│   ├── api/                       # FastAPI routes, schemas
+│   ├── mcp_server/                # FastMCP tools & database
+│   │   ├── server.py             # MCP server entry point
+│   │   ├── models.py             # SQLModel entities
+│   │   ├── database.py           # Database connection
+│   │   └── tools/                # MCP tool implementations
+│   ├── resilience/               # Circuit breaker, retry
+│   │   ├── circuit_breaker.py   # Circuit breaker pattern
+│   │   └── retry.py              # Retry decorators
+│   └── observability/            # Logging, metrics
+│       ├── logging.py            # Structured JSON logging
+│       └── metrics.py            # Metrics tracking
+├── tests/
+│   └── mcp_server/
+│       ├── conftest.py           # Pytest fixtures
+│       ├── test_models.py        # Model validation tests
+│       └── test_tools.py         # Tool integration tests
+├── specs/                         # Feature specifications
+├── .env.example                   # Environment template
+├── pyproject.toml                # Dependencies
+├── requirements.txt              # Locked dependencies
+└── CLAUDE.md                     # This file
 ```
 
 ---
 
-## Troubleshooting
-
-### Common Issues
-
-**Issue**: `ModuleNotFoundError` when running code
-**Fix**: Ensure `.venv` is active, reinstall deps: `uv pip install -e .`
-
-**Issue**: `OpenAI API key not found`
-**Fix**: Set `GEMINI_API_KEY` in `.env`, load with `python-dotenv`
-
-**Issue**: Incorrect model name errors
-**Fix**: Verify using `gemini-2.5-flash`, NOT `gpt-*` models
-
-**Issue**: MCP tools not found
-**Fix**: Ensure MCP server running, check `src/mcp/client.py` config
-
-**Issue**: Tests failing
-**Fix**: Run `uv run pytest -v` for details, ensure `.venv` active
-
-### Getting Help
-
-1. **Claude Code Skills**: Run `/sp.clarify` for spec clarification
-2. **MCP Docs**: Fetch latest docs via context-7 before debugging
-3. **Constitution**: See `.specify/memory/constitution.md` for detailed rules
-4. **ADRs**: Check `history/adr/` for past architectural decisions
-5. **PHRs**: Review `history/prompts/` for past prompt-response patterns
-
----
-
-## Quick Reference
-
-### Essential Commands
+## Essential Commands
 
 ```bash
 # Environment
@@ -504,33 +397,45 @@ uv pip compile pyproject.toml -o requirements.txt
 uv run uvicorn src.main:app --reload  # Run server
 uv run pytest                          # Run tests
 uv run pytest --cov=src               # With coverage
+uv run pytest -v                      # Verbose output
 
-# Skills
-/sp.specify    # Create spec.md
-/sp.plan       # Create plan.md
-/sp.tasks      # Create tasks.md
-/sp.implement  # Execute tasks
-/sp.adr <title>  # Create ADR
-/sp.phr        # Create PHR
+# MCP Server (standalone)
+uv run python -m src.mcp_server.server
+# OR
+uvx fastmcp run src/mcp_server/server.py
 ```
 
-### Environment Variables (.env)
+---
+
+## Environment Variables
 
 ```env
 # Database
-DATABASE_URL=postgresql://user:password@localhost:5432/todo_db
+DATABASE_URL=postgresql://user:password@host:5432/db?sslmode=require
 
 # Gemini API
 GEMINI_API_KEY=your_gemini_api_key_here
 GEMINI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
+GEMINI_MODEL=gemini-2.5-flash
 
-# App
-DEBUG=False
+# Application
+APP_HOST=0.0.0.0
+APP_PORT=8000
 LOG_LEVEL=INFO
+
+# Circuit Breaker
+CIRCUIT_BREAKER_MCP_FAILURE_THRESHOLD=5
+CIRCUIT_BREAKER_MCP_RECOVERY_TIMEOUT=30
+CIRCUIT_BREAKER_GEMINI_FAILURE_THRESHOLD=3
+CIRCUIT_BREAKER_GEMINI_RECOVERY_TIMEOUT=60
+
+# Performance
+MAX_INPUT_LENGTH=5000
+REQUEST_TIMEOUT=30
+MAX_CONCURRENT_CONNECTIONS=100
 ```
 
 ---
 
 **Version**: 1.0.0
-**Last Updated**: 2025-12-25
-**Authority**: This file + `.specify/memory/constitution.md` are supreme governing documents
+**Last Updated**: 2025-12-29
