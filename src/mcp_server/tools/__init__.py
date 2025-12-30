@@ -12,5 +12,6 @@ This module contains individual tool implementations for:
 # Import tool modules to make them available when importing from this package
 from . import create_todo  # noqa: F401
 from . import list_todos  # noqa: F401
+from . import update_todo  # noqa: F401
 
-__all__ = ["create_todo", "list_todos"]
+__all__ = ["create_todo", "list_todos", "update_todo"]

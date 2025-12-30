@@ -84,18 +84,18 @@
 
 ### Tests for User Story 2
 
-- [ ] T021 [P] [US2] Write unit test for Todo model update operations in tests/mcp_server/test_models.py testing title, description, status updates and updated_at auto-update
-- [ ] T022 [P] [US2] Write integration test for update_todo tool in tests/mcp_server/test_tools.py verifying partial updates, status transitions, and "not found" error handling
-- [ ] T023 [P] [US2] Write integration test for soft delete behavior in tests/mcp_server/test_tools.py verifying completed todos excluded from list_todos
+- [X] T021 [P] [US2] Write unit test for Todo model update operations in tests/mcp_server/test_models.py testing title, description, status updates and updated_at auto-update
+- [X] T022 [P] [US2] Write integration test for update_todo tool in tests/mcp_server/test_tools.py verifying partial updates, status transitions, and "not found" error handling
+- [X] T023 [P] [US2] Write integration test for soft delete behavior in tests/mcp_server/test_tools.py verifying completed todos excluded from list_todos
 
 ### Implementation for User Story 2
 
-- [ ] T024 [US2] Implement update_todo tool in src/mcp_server/tools/update_todo.py using @mcp.tool decorator with UpdateTodoInput for partial updates
-- [ ] T025 [US2] Add logic to manually update updated_at timestamp in update_todo tool (set to datetime.now(timezone.utc) on every update)
-- [ ] T026 [US2] Implement "not found" error handling in update_todo tool (raise ValueError if todo ID doesn't exist)
-- [ ] T027 [US2] Register update_todo tool in src/mcp_server/server.py
-- [ ] T028 [US2] Verify contract compliance for update_todo against specs/002-fastmcp-database-server/contracts/update_todo.json
-- [ ] T029 [US2] Add integration test verifying state transitions (active → completed → active) work correctly
+- [X] T024 [US2] Implement update_todo tool in src/mcp_server/tools/update_todo.py using @mcp.tool decorator with UpdateTodoInput for partial updates
+- [X] T025 [US2] Add logic to manually update updated_at timestamp in update_todo tool (set to datetime.now(timezone.utc) on every update)
+- [X] T026 [US2] Implement "not found" error handling in update_todo tool (raise ValueError if todo ID doesn't exist)
+- [X] T027 [US2] Register update_todo tool in src/mcp_server/server.py
+- [X] T028 [US2] Verify contract compliance for update_todo against specs/002-fastmcp-database-server/contracts/update_todo.json
+- [X] T029 [US2] Add integration test verifying state transitions (active → completed → active) work correctly
 
 **Checkpoint**: At this point, User Stories 1 AND 2 should both work independently. AI agent can create, list, and update todos.
 

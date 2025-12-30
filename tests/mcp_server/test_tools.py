@@ -480,3 +480,588 @@ class TestListTodosTool:
         # Verify all active todos present
         for i in range(3):
             assert f"Active {i}" in result
+
+
+class TestUpdateTodoTool:
+    """Integration tests for update_todo MCP tool.
+
+    Tests cover:
+    - Partial updates (title only, description only, status only)
+    - Multiple field updates simultaneously
+    - Status transitions (active → completed → active)
+    - "Not found" error handling for non-existent IDs
+    - Auto-update of updated_at timestamp
+    - MCP response format compliance
+    """
+
+    def test_update_todo_title_only(self, session, sample_todo):
+        """Test updating only the title of an existing todo."""
+        # Arrange
+        from src.mcp_server.tools.update_todo import update_todo
+
+        original_title = sample_todo.title
+        original_description = sample_todo.description
+        original_status = sample_todo.status
+        original_updated_at = sample_todo.updated_at
+        new_title = "Updated title for testing"
+
+        # Act
+        result = update_todo(id=sample_todo.id, title=new_title, _test_session=session)
+
+        # Assert - Verify database changes
+        session.refresh(sample_todo)
+        assert sample_todo.title == new_title
+        assert sample_todo.title != original_title
+        assert sample_todo.description == original_description  # Unchanged
+        assert sample_todo.status == original_status  # Unchanged
+        assert sample_todo.updated_at > original_updated_at  # Timestamp updated
+
+        # Assert - Verify MCP response format
+        assert isinstance(result, str)
+        assert "updated" in result.lower()
+        assert new_title in result
+
+    def test_update_todo_description_only(self, session, sample_todo):
+        """Test updating only the description of an existing todo."""
+        # Arrange
+        from src.mcp_server.tools.update_todo import update_todo
+
+        original_title = sample_todo.title
+        original_description = sample_todo.description
+        new_description = "This is the updated description for testing purposes"
+
+        # Act
+        result = update_todo(id=sample_todo.id, description=new_description, _test_session=session)
+
+        # Assert - Verify database changes
+        session.refresh(sample_todo)
+        assert sample_todo.description == new_description
+        assert sample_todo.description != original_description
+        assert sample_todo.title == original_title  # Unchanged
+
+        # Assert - Verify MCP response format
+        assert isinstance(result, str)
+        assert "updated" in result.lower()
+
+    def test_update_todo_status_only(self, session, sample_todo):
+        """Test updating only the status of an existing todo."""
+        # Arrange
+        from src.mcp_server.tools.update_todo import update_todo
+
+        original_title = sample_todo.title
+        original_description = sample_todo.description
+        assert sample_todo.status == TodoStatus.ACTIVE
+        new_status = "completed"
+
+        # Act
+        result = update_todo(id=sample_todo.id, status=new_status, _test_session=session)
+
+        # Assert - Verify database changes
+        session.refresh(sample_todo)
+        assert sample_todo.status == TodoStatus.COMPLETED
+        assert sample_todo.title == original_title  # Unchanged
+        assert sample_todo.description == original_description  # Unchanged
+
+        # Assert - Verify MCP response format
+        assert isinstance(result, str)
+        assert "updated" in result.lower()
+
+    def test_update_todo_multiple_fields(self, session, sample_todo):
+        """Test updating multiple fields simultaneously."""
+        # Arrange
+        from src.mcp_server.tools.update_todo import update_todo
+
+        new_title = "Completely new title"
+        new_description = "Completely new description"
+        new_status = "completed"
+
+        # Act
+        result = update_todo(
+            id=sample_todo.id,
+            title=new_title,
+            description=new_description,
+            status=new_status,
+            _test_session=session
+        )
+
+        # Assert - Verify all fields updated
+        session.refresh(sample_todo)
+        assert sample_todo.title == new_title
+        assert sample_todo.description == new_description
+        assert sample_todo.status == TodoStatus.COMPLETED
+
+        # Assert - Verify MCP response format
+        assert isinstance(result, str)
+        assert "updated" in result.lower()
+
+    def test_update_todo_status_active_to_completed(self, session):
+        """Test status transition from active to completed."""
+        # Arrange
+        from src.mcp_server.tools.update_todo import update_todo
+
+        todo = Todo(title="Task to complete", status=TodoStatus.ACTIVE)
+        session.add(todo)
+        session.commit()
+        session.refresh(todo)
+        assert todo.status == TodoStatus.ACTIVE
+
+        # Act
+        result = update_todo(id=todo.id, status="completed", _test_session=session)
+
+        # Assert
+        session.refresh(todo)
+        assert todo.status == TodoStatus.COMPLETED
+
+    def test_update_todo_status_completed_to_active(self, session):
+        """Test reactivating a completed todo (status transition from completed to active)."""
+        # Arrange
+        from src.mcp_server.tools.update_todo import update_todo
+
+        todo = Todo(title="Completed task", status=TodoStatus.COMPLETED)
+        session.add(todo)
+        session.commit()
+        session.refresh(todo)
+        assert todo.status == TodoStatus.COMPLETED
+
+        # Act - Reactivate
+        result = update_todo(id=todo.id, status="active", _test_session=session)
+
+        # Assert
+        session.refresh(todo)
+        assert todo.status == TodoStatus.ACTIVE
+
+    def test_update_todo_status_active_to_archived(self, session):
+        """Test status transition from active to archived."""
+        # Arrange
+        from src.mcp_server.tools.update_todo import update_todo
+
+        todo = Todo(title="Task to archive", status=TodoStatus.ACTIVE)
+        session.add(todo)
+        session.commit()
+        session.refresh(todo)
+
+        # Act
+        result = update_todo(id=todo.id, status="archived", _test_session=session)
+
+        # Assert
+        session.refresh(todo)
+        assert todo.status == TodoStatus.ARCHIVED
+
+    def test_update_todo_not_found_error(self, session):
+        """Test that updating non-existent todo ID raises appropriate error."""
+        # Arrange
+        from src.mcp_server.tools.update_todo import update_todo
+
+        non_existent_id = 99999
+
+        # Act & Assert - Should raise ValueError or similar
+        with pytest.raises(Exception) as exc_info:
+            update_todo(id=non_existent_id, title="New title", _test_session=session)
+
+        # Verify error message mentions "not found" or similar
+        error_message = str(exc_info.value).lower()
+        assert "not found" in error_message or "does not exist" in error_message or "not exist" in error_message
+
+    def test_update_todo_updated_at_auto_update(self, session, sample_todo):
+        """Test that updated_at timestamp is automatically updated on modification."""
+        # Arrange
+        from src.mcp_server.tools.update_todo import update_todo
+
+        original_updated_at = sample_todo.updated_at
+
+        # Small delay to ensure timestamp difference
+        import time
+        time.sleep(0.01)
+
+        # Act
+        result = update_todo(id=sample_todo.id, title="Modified title", _test_session=session)
+
+        # Assert
+        session.refresh(sample_todo)
+        assert sample_todo.updated_at > original_updated_at
+
+    def test_update_todo_created_at_immutable(self, session, sample_todo):
+        """Test that created_at timestamp remains unchanged after update."""
+        # Arrange
+        from src.mcp_server.tools.update_todo import update_todo
+
+        original_created_at = sample_todo.created_at
+
+        # Act
+        result = update_todo(id=sample_todo.id, title="Modified title", _test_session=session)
+
+        # Assert
+        session.refresh(sample_todo)
+        assert sample_todo.created_at == original_created_at
+
+    def test_update_todo_empty_title_validation(self, session, sample_todo):
+        """Test that empty title raises validation error."""
+        # Arrange
+        from src.mcp_server.tools.update_todo import update_todo
+
+        # Act & Assert
+        with pytest.raises(Exception) as exc_info:
+            update_todo(id=sample_todo.id, title="", _test_session=session)
+
+        # Verify error mentions validation or empty
+        error_message = str(exc_info.value).lower()
+        assert "validation" in error_message or "empty" in error_message or "required" in error_message
+
+    def test_update_todo_title_exceeds_max_length(self, session, sample_todo):
+        """Test that title exceeding 200 chars raises validation error."""
+        # Arrange
+        from src.mcp_server.tools.update_todo import update_todo
+
+        invalid_title = "A" * 201  # Exceeds max length
+
+        # Act & Assert
+        with pytest.raises(Exception) as exc_info:
+            update_todo(id=sample_todo.id, title=invalid_title, _test_session=session)
+
+        # Verify error mentions validation or length
+        error_message = str(exc_info.value).lower()
+        assert "validation" in error_message or "length" in error_message or "max" in error_message
+
+    def test_update_todo_description_exceeds_max_length(self, session, sample_todo):
+        """Test that description exceeding 2000 chars raises validation error."""
+        # Arrange
+        from src.mcp_server.tools.update_todo import update_todo
+
+        invalid_description = "A" * 2001  # Exceeds max length
+
+        # Act & Assert
+        with pytest.raises(Exception) as exc_info:
+            update_todo(id=sample_todo.id, description=invalid_description, _test_session=session)
+
+        # Verify error mentions validation or length
+        error_message = str(exc_info.value).lower()
+        assert "validation" in error_message or "length" in error_message or "max" in error_message
+
+    def test_update_todo_invalid_status(self, session, sample_todo):
+        """Test that invalid status value raises validation error."""
+        # Arrange
+        from src.mcp_server.tools.update_todo import update_todo
+
+        # Act & Assert
+        with pytest.raises(Exception) as exc_info:
+            update_todo(id=sample_todo.id, status="invalid_status", _test_session=session)
+
+        # Verify error mentions validation or status
+        error_message = str(exc_info.value).lower()
+        assert "validation" in error_message or "status" in error_message or "enum" in error_message
+
+    def test_update_todo_returns_mcp_compliant_response(self, session, sample_todo):
+        """Test that update_todo returns MCP-compliant Content object."""
+        # Arrange
+        from src.mcp_server.tools.update_todo import update_todo
+
+        # Act
+        result = update_todo(id=sample_todo.id, title="New title", _test_session=session)
+
+        # Assert - FastMCP automatically converts to MCP Content format
+        assert isinstance(result, str)
+        assert len(result) > 0
+        assert "updated" in result.lower()
+
+    def test_update_todo_state_transition_cycle_active_completed_active(self, session):
+        """Test complete state transition cycle: active → completed → active.
+
+        This test verifies that a todo can be:
+        1. Created as active
+        2. Marked as completed (soft delete)
+        3. Reactivated back to active
+
+        All data should be preserved throughout the cycle, and the todo should
+        behave correctly at each stage (e.g., excluded from list_todos when completed,
+        re-included when reactivated).
+        """
+        # Arrange
+        from src.mcp_server.tools.update_todo import update_todo
+        from src.mcp_server.tools.list_todos import list_todos
+
+        # Create an active todo
+        todo = Todo(
+            title="Test state transition cycle",
+            description="This todo will go through active → completed → active",
+            status=TodoStatus.ACTIVE
+        )
+        session.add(todo)
+        session.commit()
+        session.refresh(todo)
+
+        # Capture original data for verification
+        original_id = todo.id
+        original_title = todo.title
+        original_description = todo.description
+        original_created_at = todo.created_at
+
+        # Verify initial state: active
+        assert todo.status == TodoStatus.ACTIVE
+
+        # Verify todo appears in list_todos (active todos only)
+        list_result_1 = list_todos(_test_session=session)
+        assert original_title in list_result_1
+
+        # Act 1: Transition from active → completed
+        result_1 = update_todo(id=todo.id, status="completed", _test_session=session)
+
+        # Assert 1: Verify completion
+        session.refresh(todo)
+        assert todo.status == TodoStatus.COMPLETED
+        assert "updated" in result_1.lower()
+
+        # Verify todo is now excluded from list_todos (soft delete behavior)
+        list_result_2 = list_todos(_test_session=session)
+        assert original_title not in list_result_2
+
+        # Verify all other data preserved
+        assert todo.id == original_id
+        assert todo.title == original_title
+        assert todo.description == original_description
+        assert todo.created_at == original_created_at
+        assert todo.updated_at > original_created_at  # Timestamp updated
+
+        # Capture updated_at after first transition
+        updated_at_after_completion = todo.updated_at
+
+        # Act 2: Transition from completed → active (reactivation)
+        result_2 = update_todo(id=todo.id, status="active", _test_session=session)
+
+        # Assert 2: Verify reactivation
+        session.refresh(todo)
+        assert todo.status == TodoStatus.ACTIVE
+        assert "updated" in result_2.lower()
+
+        # Verify todo is now re-included in list_todos
+        list_result_3 = list_todos(_test_session=session)
+        assert original_title in list_result_3
+
+        # Verify all data still preserved
+        assert todo.id == original_id
+        assert todo.title == original_title
+        assert todo.description == original_description
+        assert todo.created_at == original_created_at
+        assert todo.updated_at > updated_at_after_completion  # Timestamp updated again
+
+        # Final verification: full cycle completed successfully
+        assert todo.status == TodoStatus.ACTIVE  # Back to original state
+        assert todo.id == original_id  # Same ID throughout
+        assert todo.created_at == original_created_at  # Created timestamp immutable
+
+
+class TestSoftDeleteBehavior:
+    """Integration tests for soft delete behavior (status-based filtering).
+
+    Tests verify that completed and archived todos are properly excluded
+    from list_todos results, implementing soft delete functionality.
+    """
+
+    def test_completed_todo_excluded_from_list_todos(self, session):
+        """Test that completed todos do not appear in list_todos results."""
+        # Arrange
+        from src.mcp_server.tools.list_todos import list_todos
+
+        # Create active and completed todos
+        active_todo = Todo(title="Active task", status=TodoStatus.ACTIVE)
+        completed_todo = Todo(title="Completed task", status=TodoStatus.COMPLETED)
+        session.add(active_todo)
+        session.add(completed_todo)
+        session.commit()
+
+        # Act
+        result = list_todos(_test_session=session)
+
+        # Assert - Only active todo appears
+        assert "Active task" in result
+        assert "Completed task" not in result
+
+    def test_archived_todo_excluded_from_list_todos(self, session):
+        """Test that archived todos do not appear in list_todos results."""
+        # Arrange
+        from src.mcp_server.tools.list_todos import list_todos
+
+        # Create active and archived todos
+        active_todo = Todo(title="Active task", status=TodoStatus.ACTIVE)
+        archived_todo = Todo(title="Archived task", status=TodoStatus.ARCHIVED)
+        session.add(active_todo)
+        session.add(archived_todo)
+        session.commit()
+
+        # Act
+        result = list_todos(_test_session=session)
+
+        # Assert - Only active todo appears
+        assert "Active task" in result
+        assert "Archived task" not in result
+
+    def test_soft_delete_via_status_change_to_completed(self, session):
+        """Test soft delete by changing status to completed (todo disappears from list)."""
+        # Arrange
+        from src.mcp_server.tools.list_todos import list_todos
+        from src.mcp_server.tools.update_todo import update_todo
+
+        # Create active todo
+        todo = Todo(title="Task to soft delete", status=TodoStatus.ACTIVE)
+        session.add(todo)
+        session.commit()
+        session.refresh(todo)
+
+        # Verify it appears in list
+        result_before = list_todos(_test_session=session)
+        assert "Task to soft delete" in result_before
+
+        # Act - Soft delete by changing status to completed
+        update_todo(id=todo.id, status="completed", _test_session=session)
+
+        # Assert - Todo no longer appears in list_todos
+        result_after = list_todos(_test_session=session)
+        assert "Task to soft delete" not in result_after
+
+        # Verify todo still exists in database (soft delete, not hard delete)
+        session.refresh(todo)
+        assert todo.id is not None
+        assert todo.status == TodoStatus.COMPLETED
+
+    def test_soft_delete_via_status_change_to_archived(self, session):
+        """Test soft delete by changing status to archived (todo disappears from list)."""
+        # Arrange
+        from src.mcp_server.tools.list_todos import list_todos
+        from src.mcp_server.tools.update_todo import update_todo
+
+        # Create active todo
+        todo = Todo(title="Task to archive", status=TodoStatus.ACTIVE)
+        session.add(todo)
+        session.commit()
+        session.refresh(todo)
+
+        # Verify it appears in list
+        result_before = list_todos(_test_session=session)
+        assert "Task to archive" in result_before
+
+        # Act - Soft delete by changing status to archived
+        update_todo(id=todo.id, status="archived", _test_session=session)
+
+        # Assert - Todo no longer appears in list_todos
+        result_after = list_todos(_test_session=session)
+        assert "Task to archive" not in result_after
+
+        # Verify todo still exists in database
+        session.refresh(todo)
+        assert todo.id is not None
+        assert todo.status == TodoStatus.ARCHIVED
+
+    def test_reactivate_completed_todo(self, session):
+        """Test that completed todo can be reactivated and re-appears in list_todos."""
+        # Arrange
+        from src.mcp_server.tools.list_todos import list_todos
+        from src.mcp_server.tools.update_todo import update_todo
+
+        # Create completed todo
+        todo = Todo(title="Completed task", status=TodoStatus.COMPLETED)
+        session.add(todo)
+        session.commit()
+        session.refresh(todo)
+
+        # Verify it does NOT appear in list
+        result_before = list_todos(_test_session=session)
+        assert "Completed task" not in result_before
+
+        # Act - Reactivate by changing status back to active
+        update_todo(id=todo.id, status="active", _test_session=session)
+
+        # Assert - Todo re-appears in list_todos
+        result_after = list_todos(_test_session=session)
+        assert "Completed task" in result_after
+
+        # Verify status changed in database
+        session.refresh(todo)
+        assert todo.status == TodoStatus.ACTIVE
+
+    def test_reactivate_archived_todo(self, session):
+        """Test that archived todo can be reactivated and re-appears in list_todos."""
+        # Arrange
+        from src.mcp_server.tools.list_todos import list_todos
+        from src.mcp_server.tools.update_todo import update_todo
+
+        # Create archived todo
+        todo = Todo(title="Archived task", status=TodoStatus.ARCHIVED)
+        session.add(todo)
+        session.commit()
+        session.refresh(todo)
+
+        # Verify it does NOT appear in list
+        result_before = list_todos(_test_session=session)
+        assert "Archived task" not in result_before
+
+        # Act - Reactivate
+        update_todo(id=todo.id, status="active", _test_session=session)
+
+        # Assert - Todo re-appears in list_todos
+        result_after = list_todos(_test_session=session)
+        assert "Archived task" in result_after
+
+        # Verify status changed
+        session.refresh(todo)
+        assert todo.status == TodoStatus.ACTIVE
+
+    def test_multiple_soft_deletes(self, session):
+        """Test multiple todos can be soft deleted independently."""
+        # Arrange
+        from src.mcp_server.tools.list_todos import list_todos
+        from src.mcp_server.tools.update_todo import update_todo
+
+        # Create multiple active todos
+        todo1 = Todo(title="Task 1", status=TodoStatus.ACTIVE)
+        todo2 = Todo(title="Task 2", status=TodoStatus.ACTIVE)
+        todo3 = Todo(title="Task 3", status=TodoStatus.ACTIVE)
+        session.add_all([todo1, todo2, todo3])
+        session.commit()
+        for todo in [todo1, todo2, todo3]:
+            session.refresh(todo)
+
+        # Verify all appear in list
+        result_initial = list_todos(_test_session=session)
+        assert "Task 1" in result_initial
+        assert "Task 2" in result_initial
+        assert "Task 3" in result_initial
+
+        # Act - Soft delete task 1 and task 3
+        update_todo(id=todo1.id, status="completed", _test_session=session)
+        update_todo(id=todo3.id, status="archived", _test_session=session)
+
+        # Assert - Only task 2 remains in list
+        result_after = list_todos(_test_session=session)
+        assert "Task 1" not in result_after
+        assert "Task 2" in result_after
+        assert "Task 3" not in result_after
+
+    def test_soft_delete_preserves_data(self, session):
+        """Test that soft delete preserves all todo data (title, description, timestamps)."""
+        # Arrange
+        from src.mcp_server.tools.update_todo import update_todo
+
+        todo = Todo(
+            title="Important task",
+            description="Critical details that must be preserved",
+            status=TodoStatus.ACTIVE
+        )
+        session.add(todo)
+        session.commit()
+        session.refresh(todo)
+
+        # Capture original data
+        original_id = todo.id
+        original_title = todo.title
+        original_description = todo.description
+        original_created_at = todo.created_at
+
+        # Act - Soft delete
+        update_todo(id=todo.id, status="completed", _test_session=session)
+
+        # Assert - All data preserved except status
+        session.refresh(todo)
+        assert todo.id == original_id
+        assert todo.title == original_title
+        assert todo.description == original_description
+        assert todo.created_at == original_created_at
+        assert todo.status == TodoStatus.COMPLETED
