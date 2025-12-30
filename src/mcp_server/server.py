@@ -40,7 +40,7 @@ def main() -> None:
         uvx fastmcp run src/mcp_server/server.py
     """
     # Import tools here to register them (avoids circular import at module level)
-    from .tools import create_todo  # noqa: F401
+    from .tools import create_todo, list_todos  # noqa: F401
 
     mcp.run()  # Uses stdio transport by default
 

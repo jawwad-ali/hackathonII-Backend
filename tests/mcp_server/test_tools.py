@@ -280,7 +280,7 @@ class TestListTodosTool:
         # sample_todos has 2 active, 1 completed, 1 archived
 
         # Act
-        result = list_todos()
+        result = list_todos(_test_session=session)
 
         # Assert - Should only return active todos
         assert isinstance(result, str)
@@ -297,7 +297,7 @@ class TestListTodosTool:
         # Database is empty (no sample_todos fixture)
 
         # Act
-        result = list_todos()
+        result = list_todos(_test_session=session)
 
         # Assert - Should return empty result or message indicating no todos
         assert isinstance(result, str)
@@ -311,7 +311,7 @@ class TestListTodosTool:
         # sample_todo fixture provides 1 active todo
 
         # Act
-        result = list_todos()
+        result = list_todos(_test_session=session)
 
         # Assert
         assert isinstance(result, str)
@@ -331,7 +331,7 @@ class TestListTodosTool:
         session.commit()
 
         # Act
-        result = list_todos()
+        result = list_todos(_test_session=session)
 
         # Assert
         assert "Active task" in result
@@ -350,7 +350,7 @@ class TestListTodosTool:
         session.commit()
 
         # Act
-        result = list_todos()
+        result = list_todos(_test_session=session)
 
         # Assert
         assert "Active task" in result
@@ -362,7 +362,7 @@ class TestListTodosTool:
         from src.mcp_server.tools.list_todos import list_todos
 
         # Act
-        result = list_todos()
+        result = list_todos(_test_session=session)
 
         # Assert - FastMCP automatically converts to MCP Content format
         # Tool should return a string (FastMCP handles Content wrapping)
@@ -384,7 +384,7 @@ class TestListTodosTool:
         session.refresh(todo)
 
         # Act
-        result = list_todos()
+        result = list_todos(_test_session=session)
 
         # Assert - Response should include key fields
         assert "Test todo" in result  # Title
@@ -404,7 +404,7 @@ class TestListTodosTool:
         session.commit()
 
         # Act
-        result = list_todos()
+        result = list_todos(_test_session=session)
 
         # Assert - All 5 should be in result
         assert isinstance(result, str)
@@ -423,7 +423,7 @@ class TestListTodosTool:
         session.refresh(todo)
 
         # Verify it appears in list
-        result_before = list_todos()
+        result_before = list_todos(_test_session=session)
         assert "Task to complete" in result_before
 
         # Act - Change status to completed
@@ -432,7 +432,7 @@ class TestListTodosTool:
         session.commit()
 
         # Assert - Should no longer appear in list
-        result_after = list_todos()
+        result_after = list_todos(_test_session=session)
         assert "Task to complete" not in result_after
 
     def test_list_todos_after_status_change_to_archived(self, session):
@@ -447,7 +447,7 @@ class TestListTodosTool:
         session.refresh(todo)
 
         # Verify it appears in list
-        result_before = list_todos()
+        result_before = list_todos(_test_session=session)
         assert "Task to archive" in result_before
 
         # Act - Change status to archived
@@ -456,7 +456,7 @@ class TestListTodosTool:
         session.commit()
 
         # Assert - Should no longer appear in list
-        result_after = list_todos()
+        result_after = list_todos(_test_session=session)
         assert "Task to archive" not in result_after
 
     def test_list_todos_count_accuracy(self, session):
@@ -473,7 +473,7 @@ class TestListTodosTool:
         session.commit()
 
         # Act
-        result = list_todos()
+        result = list_todos(_test_session=session)
 
         # Assert - Should report 3 active todos
         assert "3" in result or "three" in result.lower()

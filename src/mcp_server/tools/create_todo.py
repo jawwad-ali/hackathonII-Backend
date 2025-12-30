@@ -10,6 +10,7 @@ responses to the AI agent.
 from datetime import datetime, timezone
 from typing import Optional
 
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session
 
 from ..database import engine
@@ -81,8 +82,12 @@ def create_todo(title: str, description: Optional[str] = None, _test_session: Op
                 f"Status: {todo.status.value}"
             )
 
+        except IntegrityError as e:
+            # Rollback on integrity error (unique constraint, foreign key, etc.)
+            session.rollback()
+            raise ValueError(f"Database integrity error: {str(e.orig)}")
         except Exception as e:
-            # Rollback on error
+            # Rollback on any other error
             session.rollback()
             raise Exception(f"Database error while creating todo: {str(e)}")
 
@@ -113,8 +118,12 @@ def create_todo(title: str, description: Optional[str] = None, _test_session: Op
                     f"Status: {todo.status.value}"
                 )
 
+            except IntegrityError as e:
+                # Rollback on integrity error (unique constraint, foreign key, etc.)
+                session.rollback()
+                raise ValueError(f"Database integrity error: {str(e.orig)}")
             except Exception as e:
-                # Rollback on error
+                # Rollback on any other error
                 session.rollback()
                 raise Exception(f"Database error while creating todo: {str(e)}")
 

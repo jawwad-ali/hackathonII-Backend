@@ -66,11 +66,11 @@
 ### Implementation for User Story 1
 
 - [X] T015 [US1] Implement create_todo tool in src/mcp_server/tools/create_todo.py using @mcp.tool decorator with session-per-tool pattern and CreateTodoInput validation
-- [ ] T016 [US1] Implement list_todos tool in src/mcp_server/tools/list_todos.py using @mcp.tool decorator with Session context manager, filtering by TodoStatus.ACTIVE
-- [ ] T017 [US1] Register create_todo and list_todos tools in src/mcp_server/server.py by importing and ensuring they use the shared mcp instance
-- [ ] T018 [US1] Add error handling for database integrity errors in create_todo tool (catch IntegrityError, raise ValueError with descriptive message)
-- [ ] T019 [US1] Verify contract compliance for create_todo against specs/002-fastmcp-database-server/contracts/create_todo.json
-- [ ] T020 [US1] Verify contract compliance for list_todos against specs/002-fastmcp-database-server/contracts/list_todos.json
+- [X] T016 [US1] Implement list_todos tool in src/mcp_server/tools/list_todos.py using @mcp.tool decorator with Session context manager, filtering by TodoStatus.ACTIVE
+- [X] T017 [US1] Register create_todo and list_todos tools in src/mcp_server/server.py by importing and ensuring they use the shared mcp instance
+- [X] T018 [US1] Add error handling for database integrity errors in create_todo tool (catch IntegrityError, raise ValueError with descriptive message)
+- [X] T019 [US1] Verify contract compliance for create_todo against specs/002-fastmcp-database-server/contracts/create_todo.json
+- [X] T020 [US1] Verify contract compliance for list_todos against specs/002-fastmcp-database-server/contracts/list_todos.json
 
 **Checkpoint**: At this point, User Story 1 should be fully functional and testable independently. AI agent can create and list todos.
 

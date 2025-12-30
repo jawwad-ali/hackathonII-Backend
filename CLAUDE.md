@@ -52,6 +52,244 @@ PostgreSQL (persistence)
 
 ---
 
+## Integration & Connectivity Timeline
+
+### Overview
+
+The system is built in **4 distinct phases**, each adding a layer of connectivity:
+
+```
+Step 1: Build MCP Tools (Current)
+   │
+   │ MCP server runs standalone
+   │
+   ▼
+Step 2: Complete All CRUD Operations
+   │
+   │ All 5 MCP tools ready
+   │
+   ▼
+Step 3: Agent ↔ MCP Integration 🔥 CRITICAL CONNECTIVITY
+   │
+   │ Agent can call MCP tools via protocol
+   │
+   ▼
+Step 4: ChatKit ↔ FastAPI Integration
+   │
+   │ Users can chat with agent via OpenAI ChatKit
+   │
+   ▼
+PRODUCTION: End-to-End System
+```
+
+---
+
+### Step 1: Build MCP Server (Feature 002) ✅ IN PROGRESS
+
+**Goal**: Create standalone FastMCP Database Server with all CRUD tools
+
+**Status**:
+- ✅ User Story 1 Complete: `create_todo`, `list_todos`
+- ⏳ User Story 2 Pending: `update_todo`
+- ⏳ User Story 3 Pending: `search_todos`
+- ⏳ User Story 4 Pending: `delete_todo`
+
+**What's Built**:
+```
+src/mcp_server/
+├── server.py           # MCP server instance
+├── models.py           # Todo entity
+├── database.py         # PostgreSQL connection
+└── tools/
+    ├── create_todo.py  ✅
+    └── list_todos.py   ✅
+```
+
+**Testing**: MCP server can be tested standalone using:
+```bash
+# Option 1: MCP Inspector (recommended)
+mcp-inspector uvx fastmcp run src/mcp_server/server.py
+
+# Option 2: Direct execution
+uv run python -m src.mcp_server.server
+```
+
+**No connectivity yet** - tools work independently.
+
+---
+
+### Step 2: Complete All CRUD Operations (Feature 002)
+
+**Goal**: Finish remaining MCP tools for full CRUD functionality
+
+**Tasks**:
+- User Story 2: `update_todo` (T021-T029)
+- User Story 3: `search_todos` (T030-T038)
+- User Story 4: `delete_todo` (T039-T046)
+
+**Deliverable**: Complete MCP server with 5 tools:
+1. `create_todo` ✅
+2. `list_todos` ✅
+3. `update_todo` ⏳
+4. `search_todos` ⏳
+5. `delete_todo` ⏳
+
+**Still standalone** - no connectivity.
+
+---
+
+### Step 3: Agent ↔ MCP Integration (Feature 003) 🔥 CRITICAL
+
+**Goal**: Connect AI Agent to MCP Server via MCP Protocol
+
+**This is THE key connectivity step** where the agent gains database capabilities.
+
+**Architecture**:
+```
+┌──────────────────────────────┐
+│  AI Agent                    │
+│  (Gemini 2.5 Flash)          │
+│  + OpenAI Agents SDK         │
+└──────────┬───────────────────┘
+           │
+           │ MCP Protocol (stdio)
+           │ JSON-RPC communication
+           │
+┌──────────▼───────────────────┐
+│  FastMCP Database Server     │
+│  (5 CRUD tools)              │
+└──────────┬───────────────────┘
+           │
+           ▼
+      PostgreSQL
+```
+
+**Implementation** (`src/agents/todo_agent.py`):
+```python
+import subprocess
+from openai import AsyncOpenAI
+
+# 1. Start MCP server as subprocess
+mcp_process = subprocess.Popen(
+    ["uvx", "fastmcp", "run", "src/mcp_server/server.py"],
+    stdin=subprocess.PIPE,
+    stdout=subprocess.PIPE,
+    stderr=subprocess.PIPE
+)
+
+# 2. Configure Gemini client
+client = AsyncOpenAI(
+    api_key=os.getenv("GEMINI_API_KEY"),
+    base_url=os.getenv("GEMINI_BASE_URL"),
+)
+
+# 3. Create agent with MCP tools
+agent = Agent(
+    name="TodoAgent",
+    model="gemini-2.5-flash",
+    instructions="You are a todo management assistant...",
+    # MCP tools auto-discovered via stdio protocol
+)
+```
+
+**What Works After Step 3**:
+- Agent receives: "Create a todo for buying groceries"
+- Agent decides to call: `create_todo(title="Buy groceries")`
+- MCP server executes database operation
+- Agent receives result and can respond
+
+**Testing**: Agent can be tested programmatically, but no user interface yet.
+
+---
+
+### Step 4: ChatKit ↔ FastAPI Integration (Feature 004)
+
+**Goal**: Expose agent to users via HTTP API and connect to **OpenAI ChatKit** frontend
+
+**Architecture**:
+```
+┌──────────────────────────────┐
+│  OpenAI ChatKit (Frontend)   │
+│  - Modern chat interface     │
+│  - Real-time messaging       │
+│  - OpenAI-styled UI          │
+└──────────┬───────────────────┘
+           │
+           │ HTTP/WebSocket
+           │
+┌──────────▼───────────────────┐
+│  FastAPI Endpoints           │
+│  POST /chat/stream           │
+│  WebSocket /ws/chat          │
+└──────────┬───────────────────┘
+           │
+           ▼
+    Agent + MCP Server
+    (from Step 3)
+```
+
+**Implementation** (`src/api/chat.py`):
+```python
+from fastapi import FastAPI, WebSocket
+from src.agents.todo_agent import TodoAgent
+
+app = FastAPI()
+agent = TodoAgent()  # Already has MCP tools from Step 3
+
+@app.post("/chat/stream")
+async def chat_stream(request: ChatRequest):
+    """Stream agent responses to ChatKit frontend."""
+    async for chunk in agent.stream(request.message):
+        yield chunk
+
+@app.websocket("/ws/chat")
+async def chat_websocket(websocket: WebSocket):
+    """Real-time chat via WebSocket for ChatKit."""
+    await websocket.accept()
+    async for message in websocket.iter_text():
+        response = await agent.respond(message)
+        await websocket.send_json(response)
+```
+
+**ChatKit Integration**:
+- **Frontend**: OpenAI ChatKit provides the chat interface
+- **Backend**: FastAPI endpoints serve as the bridge to the agent
+- **Protocol**: HTTP streaming or WebSocket for real-time updates
+
+**What Works After Step 4**:
+- User types in ChatKit UI: "What are my active todos?"
+- ChatKit sends HTTP request to FastAPI backend
+- FastAPI forwards to agent
+- Agent uses `list_todos` MCP tool
+- Response streams back through FastAPI to ChatKit UI
+
+**This is full end-to-end connectivity with ChatKit!**
+
+---
+
+### Summary Table
+
+| Step | Component | Connectivity | Frontend | Status | Feature |
+|------|-----------|--------------|----------|--------|---------|
+| 1 | MCP Server (2/5 tools) | None (standalone) | N/A | ✅ DONE | 002 |
+| 2 | MCP Server (5/5 tools) | None (standalone) | N/A | ⏳ TODO | 002 |
+| 3 | Agent ↔ MCP | **MCP Protocol** | N/A | ⏳ TODO | 003 |
+| 4 | ChatKit ↔ FastAPI | **HTTP/WebSocket** | **OpenAI ChatKit** | ⏳ TODO | 004 |
+
+---
+
+### Current Focus
+
+**We are in Step 1/2**: Building the MCP server foundation.
+
+**Next Major Milestone**: Complete Step 2 (all CRUD tools), then move to Step 3 (agent integration).
+
+**Critical Note**:
+- **Step 3** is where "connectivity magic" happens - the agent gains database capabilities via MCP protocol.
+- **Step 4** connects OpenAI ChatKit frontend to the backend, enabling user interaction.
+
+---
+
 ## Core Principles
 
 ### 1. Environment-First Development ⚠️
