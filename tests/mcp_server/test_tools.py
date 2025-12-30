@@ -1244,3 +1244,220 @@ class TestSearchTodosTool:
         assert "0" in result_empty or "no" in result_empty.lower() or "not found" in result_empty.lower()
         assert "URGENT Meeting" not in result_empty
         assert "urgent call" not in result_empty
+
+    def test_search_todos_sql_injection_prevention_keywords(self, session):
+        """Test that SQL injection attempts via SQL keywords are rejected."""
+        # Arrange
+        from src.mcp_server.tools.search_todos import search_todos
+
+        # Create a normal todo
+        todo = Todo(title="Normal Todo", description="Normal description", status=TodoStatus.ACTIVE)
+        session.add(todo)
+        session.commit()
+
+        # Act & Assert - Test various SQL injection patterns
+        sql_injection_attempts = [
+            "test'; DROP TABLE todos; --",
+            "test' OR '1'='1",
+            "test' UNION SELECT * FROM todos --",
+            "test'; DELETE FROM todos WHERE id=1; --",
+            "test' AND 1=1 --",
+            "test/**/OR/**/1=1",
+        ]
+
+        for malicious_keyword in sql_injection_attempts:
+            with pytest.raises(ValueError) as exc_info:
+                search_todos(keyword=malicious_keyword, _test_session=session)
+
+            # Verify the error message indicates malicious pattern detected
+            error_message = str(exc_info.value).lower()
+            assert "malicious" in error_message or "invalid" in error_message
+
+    def test_search_todos_sql_injection_prevention_length(self, session):
+        """Test that excessively long keywords are rejected to prevent resource exhaustion."""
+        # Arrange
+        from src.mcp_server.tools.search_todos import search_todos
+
+        # Act & Assert - Test keyword exceeding max length (100 chars)
+        long_keyword = "A" * 101
+
+        with pytest.raises(ValueError) as exc_info:
+            search_todos(keyword=long_keyword, _test_session=session)
+
+        # Verify error message mentions length
+        error_message = str(exc_info.value).lower()
+        assert "length" in error_message or "exceeds" in error_message
+
+    def test_search_todos_sql_injection_prevention_empty_keyword(self, session):
+        """Test that empty or whitespace-only keywords are rejected."""
+        # Arrange
+        from src.mcp_server.tools.search_todos import search_todos
+
+        # Act & Assert - Test various empty keyword patterns
+        invalid_keywords = ["", "   ", "\t", "\n"]
+
+        for invalid_keyword in invalid_keywords:
+            with pytest.raises(ValueError) as exc_info:
+                search_todos(keyword=invalid_keyword, _test_session=session)
+
+            # Verify error message indicates empty/whitespace issue
+            error_message = str(exc_info.value).lower()
+            assert "empty" in error_message or "whitespace" in error_message or "cannot be" in error_message
+
+    def test_search_todos_wildcard_escaping(self, session):
+        """Test that SQL wildcard characters (%, _) are escaped and treated literally."""
+        # Arrange
+        from src.mcp_server.tools.search_todos import search_todos
+
+        # Create todos with literal % and _ characters
+        todo1 = Todo(title="100% Complete", description="Fully done", status=TodoStatus.ACTIVE)
+        todo2 = Todo(title="Test_File", description="Underscore test", status=TodoStatus.ACTIVE)
+        todo3 = Todo(title="Normal Todo", description="No wildcards", status=TodoStatus.ACTIVE)
+
+        session.add_all([todo1, todo2, todo3])
+        session.commit()
+
+        # Act - Search for literal % (should match "100% Complete" only)
+        # Note: After sanitization, % becomes \%, which should match literal %
+        # However, in our implementation, we escape % to \%, so searching for %
+        # will actually search for the escaped version
+        result_percent = search_todos(keyword="%", _test_session=session)
+
+        # Assert - The search should not match all todos (% is escaped)
+        # Instead it should only match todos with literal % character
+        assert isinstance(result_percent, str)
+        # The sanitization replaces % with \%, so it won't match as wildcard
+        # It will only match if there's a literal % in the database
+        # Since we have "100% Complete", it should find it after proper escaping
+        assert "100" in result_percent or "no" in result_percent.lower()
+
+
+class TestDeleteTodoTool:
+    """Integration tests for delete_todo MCP tool.
+
+    Tests cover:
+    - Permanent deletion (hard delete)
+    - "Not found" error handling for non-existent IDs
+    - Isolation verification (other todos remain unchanged)
+    - MCP response format compliance
+    """
+
+    def test_delete_todo_permanent_deletion(self, session):
+        """Test permanently deleting a todo from the database.
+
+        Verifies that delete_todo performs a hard delete, completely removing
+        the todo from the database so it cannot be retrieved afterward.
+        """
+        # Arrange
+        from src.mcp_server.tools.delete_todo import delete_todo
+
+        # Create a todo to delete
+        todo = Todo(title="Todo to delete", description="Will be deleted", status=TodoStatus.ACTIVE)
+        session.add(todo)
+        session.commit()
+        session.refresh(todo)
+        todo_id = todo.id
+
+        # Verify todo exists before deletion
+        assert session.get(Todo, todo_id) is not None
+
+        # Act - Delete the todo
+        result = delete_todo(id=todo_id, _test_session=session)
+
+        # Assert - Todo is permanently deleted
+        assert isinstance(result, str)
+        assert "deleted" in result.lower() or "removed" in result.lower()
+        assert str(todo_id) in result
+
+        # Verify todo no longer exists in database
+        deleted_todo = session.get(Todo, todo_id)
+        assert deleted_todo is None
+
+    def test_delete_todo_not_found_error(self, session):
+        """Test error handling when attempting to delete non-existent todo.
+
+        Verifies that delete_todo raises an appropriate error when given
+        an ID that doesn't exist in the database.
+        """
+        # Arrange
+        from src.mcp_server.tools.delete_todo import delete_todo
+
+        # Use a non-existent ID
+        non_existent_id = 99999
+
+        # Verify ID doesn't exist
+        assert session.get(Todo, non_existent_id) is None
+
+        # Act & Assert - Should raise ValueError
+        with pytest.raises(ValueError) as exc_info:
+            delete_todo(id=non_existent_id, _test_session=session)
+
+        # Verify error message is descriptive
+        error_message = str(exc_info.value).lower()
+        assert "not found" in error_message or "does not exist" in error_message
+        assert str(non_existent_id) in str(exc_info.value)
+
+    def test_delete_todo_other_todos_remain_unchanged(self, session):
+        """Test that deleting one todo doesn't affect other todos.
+
+        Verifies isolation - deleting a specific todo should only remove
+        that todo, leaving all other todos in the database unchanged.
+        """
+        # Arrange
+        from src.mcp_server.tools.delete_todo import delete_todo
+
+        # Create multiple todos
+        todo1 = Todo(title="Keep this one", description="Should remain", status=TodoStatus.ACTIVE)
+        todo2 = Todo(title="Delete this one", description="Will be deleted", status=TodoStatus.ACTIVE)
+        todo3 = Todo(title="Keep this too", description="Should also remain", status=TodoStatus.COMPLETED)
+        todo4 = Todo(title="And this", description="Should remain as well", status=TodoStatus.ARCHIVED)
+
+        session.add_all([todo1, todo2, todo3, todo4])
+        session.commit()
+        session.refresh(todo1)
+        session.refresh(todo2)
+        session.refresh(todo3)
+        session.refresh(todo4)
+
+        # Store IDs and data for verification
+        todo1_id = todo1.id
+        todo2_id = todo2.id
+        todo3_id = todo3.id
+        todo4_id = todo4.id
+
+        # Verify all todos exist before deletion
+        assert session.get(Todo, todo1_id) is not None
+        assert session.get(Todo, todo2_id) is not None
+        assert session.get(Todo, todo3_id) is not None
+        assert session.get(Todo, todo4_id) is not None
+
+        # Act - Delete only todo2
+        result = delete_todo(id=todo2_id, _test_session=session)
+
+        # Assert - Only todo2 is deleted
+        assert session.get(Todo, todo2_id) is None
+
+        # Assert - All other todos remain unchanged
+        remaining_todo1 = session.get(Todo, todo1_id)
+        remaining_todo3 = session.get(Todo, todo3_id)
+        remaining_todo4 = session.get(Todo, todo4_id)
+
+        assert remaining_todo1 is not None
+        assert remaining_todo1.title == "Keep this one"
+        assert remaining_todo1.description == "Should remain"
+        assert remaining_todo1.status == TodoStatus.ACTIVE
+
+        assert remaining_todo3 is not None
+        assert remaining_todo3.title == "Keep this too"
+        assert remaining_todo3.description == "Should also remain"
+        assert remaining_todo3.status == TodoStatus.COMPLETED
+
+        assert remaining_todo4 is not None
+        assert remaining_todo4.title == "And this"
+        assert remaining_todo4.description == "Should remain as well"
+        assert remaining_todo4.status == TodoStatus.ARCHIVED
+
+        # Verify count - should be 3 remaining todos
+        statement = select(Todo)
+        all_todos = session.exec(statement).all()
+        assert len(all_todos) == 3

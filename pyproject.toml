@@ -9,6 +9,7 @@ description = "AI Agent Orchestrator for Todo Management using FastAPI and OpenA
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    # FastAPI & Agent Orchestrator Dependencies
     "fastapi>=0.115.0",
     "openai-agents>=0.6.4",
     "openai-agents-mcp>=0.0.8",
@@ -18,7 +19,40 @@ dependencies = [
     "python-dotenv>=1.0.1",
     "tenacity>=9.0.0",
     "python-json-logger>=3.2.1",
+
+    # MCP Database Server Dependencies (Feature 002)
+    "fastmcp>=2.14.0",
+    "sqlmodel>=0.0.31",
+    "psycopg2-binary>=2.9.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.0.0",
+    "pytest-cov>=7.0.0",
+    "pytest-asyncio>=0.24.0",
 ]
 
 [tool.setuptools]
 packages = []
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-v",
+    "--strict-markers",
+    "--strict-config",
+    "--color=yes",
+]
+markers = [
+    "unit: Unit tests",
+    "integration: Integration tests",
+    "slow: Slow running tests",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning:pydantic.*:",
+    "ignore::DeprecationWarning:sqlmodel.*:",
+]

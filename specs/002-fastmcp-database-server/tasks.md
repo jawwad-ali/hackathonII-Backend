@@ -134,17 +134,17 @@
 
 ### Tests for User Story 4
 
-- [ ] T039 [P] [US4] Write unit test for Todo model delete operation in tests/mcp_server/test_models.py
-- [ ] T040 [P] [US4] Write integration test for delete_todo tool in tests/mcp_server/test_tools.py verifying permanent deletion
-- [ ] T041 [P] [US4] Write integration test for delete_todo tool in tests/mcp_server/test_tools.py testing "not found" error for non-existent ID
-- [ ] T042 [P] [US4] Write integration test for delete_todo tool in tests/mcp_server/test_tools.py verifying other todos remain unchanged after deletion
+- [X] T039 [P] [US4] Write unit test for Todo model delete operation in tests/mcp_server/test_models.py
+- [X] T040 [P] [US4] Write integration test for delete_todo tool in tests/mcp_server/test_tools.py verifying permanent deletion
+- [X] T041 [P] [US4] Write integration test for delete_todo tool in tests/mcp_server/test_tools.py testing "not found" error for non-existent ID
+- [X] T042 [P] [US4] Write integration test for delete_todo tool in tests/mcp_server/test_tools.py verifying other todos remain unchanged after deletion
 
 ### Implementation for User Story 4
 
-- [ ] T043 [US4] Implement delete_todo tool in src/mcp_server/tools/delete_todo.py using hard delete (session.delete) with error handling for non-existent IDs
-- [ ] T044 [US4] Add "not found" error handling in delete_todo tool (raise ValueError if todo ID doesn't exist before attempting delete)
-- [ ] T045 [US4] Register delete_todo tool in src/mcp_server/server.py
-- [ ] T046 [US4] Verify contract compliance for delete_todo against specs/002-fastmcp-database-server/contracts/delete_todo.json
+- [X] T043 [US4] Implement delete_todo tool in src/mcp_server/tools/delete_todo.py using hard delete (session.delete) with error handling for non-existent IDs
+- [X] T044 [US4] Add "not found" error handling in delete_todo tool (raise ValueError if todo ID doesn't exist before attempting delete)
+- [X] T045 [US4] Register delete_todo tool in src/mcp_server/server.py
+- [X] T046 [US4] Verify contract compliance for delete_todo against specs/002-fastmcp-database-server/contracts/delete_todo.json
 
 **Checkpoint**: All 4 user stories are complete. Full CRUD functionality available to AI agent.
 
@@ -154,15 +154,15 @@
 
 **Purpose**: Improvements that affect multiple user stories and overall server quality
 
-- [ ] T047 [P] Add comprehensive docstrings to all tools in src/mcp_server/tools/ following MCP description format
-- [ ] T048 [P] Add logging statements to database operations in src/mcp_server/database.py for startup, table creation, and errors
-- [ ] T049 [P] Create integration test in tests/mcp_server/test_database.py verifying database initialization and connection pooling
-- [ ] T050 Run full test suite with coverage: uv run pytest tests/mcp_server/ --cov=src/mcp_server --cov-report=term-missing and verify >80% coverage
-- [ ] T051 [P] Add input sanitization validation to prevent SQL injection in search_todos keyword parameter
-- [ ] T052 Test server startup using quickstart.md instructions and verify all 5 tools are registered
-- [ ] T053 [P] Add main() function and __main__ block to src/mcp_server/server.py for direct execution
-- [ ] T054 Test MCP server with MCP Inspector to verify all tools work via stdio protocol
-- [ ] T055 [P] Update pyproject.toml with all production dependencies (fastmcp, sqlmodel, psycopg2-binary, python-dotenv) and dev dependencies (pytest)
+- [X] T047 [P] Add comprehensive docstrings to all tools in src/mcp_server/tools/ following MCP description format
+- [X] T048 [P] Add logging statements to database operations in src/mcp_server/database.py for startup, table creation, and errors
+- [X] T049 [P] Create integration test in tests/mcp_server/test_database.py verifying database initialization and connection pooling
+- [X] T050 Run full test suite with coverage: uv run pytest tests/mcp_server/ --cov=src/mcp_server --cov-report=term-missing and verify >80% coverage
+- [X] T051 [P] Add input sanitization validation to prevent SQL injection in search_todos keyword parameter
+- [X] T052 Test server startup using quickstart.md instructions and verify all 5 tools are registered
+- [X] T053 [P] Add main() function and __main__ block to src/mcp_server/server.py for direct execution
+- [X] T054 Test MCP server with MCP Inspector to verify all tools work via stdio protocol
+- [X] T055 [P] Update pyproject.toml with all production dependencies (fastmcp, sqlmodel, psycopg2-binary, python-dotenv) and dev dependencies (pytest)
 
 ---
 
