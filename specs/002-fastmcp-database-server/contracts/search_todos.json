@@ -1,0 +1,36 @@
+{
+  "tool_name": "search_todos",
+  "description": "Searches active todos by keyword in title or description",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "keyword": {
+        "type": "string",
+        "description": "Search keyword (case-insensitive, searches title and description)"
+      }
+    },
+    "required": ["keyword"]
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "type": { "const": "text" },
+      "text": { "type": "string", "description": "Search results summary (e.g., 'Found 3 todos matching keyword')" },
+      "data": {
+        "type": "array",
+        "description": "List of matching active todo objects",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": { "type": "integer" },
+            "title": { "type": "string" },
+            "description": { "type": "string" },
+            "status": { "enum": ["active"] },
+            "created_at": { "type": "string", "format": "date-time" },
+            "updated_at": { "type": "string", "format": "date-time" }
+          }
+        }
+      }
+    }
+  }
+}
