@@ -13,5 +13,6 @@ This module contains individual tool implementations for:
 from . import create_todo  # noqa: F401
 from . import list_todos  # noqa: F401
 from . import update_todo  # noqa: F401
+from . import search_todos  # noqa: F401
 
-__all__ = ["create_todo", "list_todos", "update_todo"]
+__all__ = ["create_todo", "list_todos", "update_todo", "search_todos"]

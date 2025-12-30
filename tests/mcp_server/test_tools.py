@@ -1065,3 +1065,182 @@ class TestSoftDeleteBehavior:
         assert todo.description == original_description
         assert todo.created_at == original_created_at
         assert todo.status == TodoStatus.COMPLETED
+
+
+class TestSearchTodosTool:
+    """Integration tests for search_todos MCP tool.
+
+    Tests cover:
+    - Keyword matching in title field
+    - Keyword matching in description field
+    - Status filtering (only active todos returned)
+    - Case-insensitive search
+    - Empty results when no matches found
+    - MCP response format compliance
+    """
+
+    def test_search_todos_keyword_matching_in_title(self, session):
+        """Test searching for todos by keyword in title field.
+
+        Verifies that search_todos correctly matches keywords in todo titles
+        and returns only active todos with matching titles.
+        """
+        # Arrange
+        from src.mcp_server.tools.search_todos import search_todos
+
+        # Create todos with different titles
+        todo1 = Todo(title="Buy groceries", description="Milk and eggs", status=TodoStatus.ACTIVE)
+        todo2 = Todo(title="Call dentist", description="Schedule appointment", status=TodoStatus.ACTIVE)
+        todo3 = Todo(title="Buy birthday gift", description="For mom", status=TodoStatus.ACTIVE)
+        todo4 = Todo(title="Finish report", description="Q4 report", status=TodoStatus.ACTIVE)
+
+        session.add_all([todo1, todo2, todo3, todo4])
+        session.commit()
+
+        # Act - Search for keyword "buy"
+        result = search_todos(keyword="buy", _test_session=session)
+
+        # Assert - Only todos with "buy" in title are returned
+        assert isinstance(result, str)
+        assert "Buy groceries" in result
+        assert "Buy birthday gift" in result
+        assert "Call dentist" not in result
+        assert "Finish report" not in result
+
+        # Verify result mentions the count
+        assert "2" in result or "two" in result.lower()
+
+    def test_search_todos_keyword_matching_in_description(self, session):
+        """Test searching for todos by keyword in description field.
+
+        Verifies that search_todos correctly matches keywords in todo descriptions
+        and returns todos even when keyword is only in description (not title).
+        """
+        # Arrange
+        from src.mcp_server.tools.search_todos import search_todos
+
+        # Create todos with different descriptions
+        todo1 = Todo(
+            title="Shopping",
+            description="Buy milk, bread, and eggs from grocery store",
+            status=TodoStatus.ACTIVE
+        )
+        todo2 = Todo(
+            title="Appointment",
+            description="Doctor appointment at 3pm",
+            status=TodoStatus.ACTIVE
+        )
+        todo3 = Todo(
+            title="Meeting",
+            description="Team meeting about grocery delivery project",
+            status=TodoStatus.ACTIVE
+        )
+        todo4 = Todo(
+            title="Review",
+            description="Review code changes",
+            status=TodoStatus.ACTIVE
+        )
+
+        session.add_all([todo1, todo2, todo3, todo4])
+        session.commit()
+
+        # Act - Search for keyword "grocery" (appears in descriptions only)
+        result = search_todos(keyword="grocery", _test_session=session)
+
+        # Assert - Todos with "grocery" in description are returned
+        assert isinstance(result, str)
+        assert "Shopping" in result  # Has "grocery" in description
+        assert "Meeting" in result   # Has "grocery" in description
+        assert "Appointment" not in result
+        assert "Review" not in result
+
+        # Verify result mentions the count
+        assert "2" in result or "two" in result.lower()
+
+    def test_search_todos_excludes_completed_and_archived(self, session):
+        """Test that search_todos only returns active todos.
+
+        Verifies that completed and archived todos are excluded from search results,
+        even if they match the search keyword.
+        """
+        # Arrange
+        from src.mcp_server.tools.search_todos import search_todos
+
+        # Create todos with same keyword but different statuses
+        active_todo = Todo(
+            title="Buy groceries",
+            description="Active task",
+            status=TodoStatus.ACTIVE
+        )
+        completed_todo = Todo(
+            title="Buy supplies",
+            description="Completed task",
+            status=TodoStatus.COMPLETED
+        )
+        archived_todo = Todo(
+            title="Buy equipment",
+            description="Archived task",
+            status=TodoStatus.ARCHIVED
+        )
+
+        session.add_all([active_todo, completed_todo, archived_todo])
+        session.commit()
+
+        # Act - Search for keyword "buy" (all todos have it in title)
+        result = search_todos(keyword="buy", _test_session=session)
+
+        # Assert - Only active todo is returned
+        assert isinstance(result, str)
+        assert "Buy groceries" in result  # Active
+        assert "Buy supplies" not in result  # Completed - excluded
+        assert "Buy equipment" not in result  # Archived - excluded
+
+        # Verify only 1 result
+        assert "1" in result or "one" in result.lower()
+
+    def test_search_todos_case_insensitive_and_empty_results(self, session):
+        """Test case-insensitive search and empty results handling.
+
+        Verifies that:
+        1. Search is case-insensitive (matches regardless of case)
+        2. Empty results are handled gracefully when no matches found
+        """
+        # Arrange
+        from src.mcp_server.tools.search_todos import search_todos
+
+        # Create todos with mixed case
+        todo1 = Todo(title="URGENT Meeting", description="Board meeting", status=TodoStatus.ACTIVE)
+        todo2 = Todo(title="urgent call", description="Call client", status=TodoStatus.ACTIVE)
+        todo3 = Todo(title="Review Report", description="Urgent review needed", status=TodoStatus.ACTIVE)
+
+        session.add_all([todo1, todo2, todo3])
+        session.commit()
+
+        # Act 1 - Search with lowercase (should match URGENT, urgent, Urgent)
+        result_lowercase = search_todos(keyword="urgent", _test_session=session)
+
+        # Assert 1 - Case-insensitive matching works
+        assert isinstance(result_lowercase, str)
+        assert "URGENT Meeting" in result_lowercase
+        assert "urgent call" in result_lowercase
+        assert "Review Report" in result_lowercase  # Has "Urgent" in description
+
+        # Verify all 3 todos found
+        assert "3" in result_lowercase or "three" in result_lowercase.lower()
+
+        # Act 2 - Search with uppercase (should also match all)
+        result_uppercase = search_todos(keyword="URGENT", _test_session=session)
+
+        # Assert 2 - Case-insensitive matching works both ways
+        assert "URGENT Meeting" in result_uppercase
+        assert "urgent call" in result_uppercase
+        assert "Review Report" in result_uppercase
+
+        # Act 3 - Search for non-existent keyword
+        result_empty = search_todos(keyword="nonexistent", _test_session=session)
+
+        # Assert 3 - Empty results handled gracefully
+        assert isinstance(result_empty, str)
+        assert "0" in result_empty or "no" in result_empty.lower() or "not found" in result_empty.lower()
+        assert "URGENT Meeting" not in result_empty
+        assert "urgent call" not in result_empty

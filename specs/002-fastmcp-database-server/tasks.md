@@ -109,18 +109,18 @@
 
 ### Tests for User Story 3
 
-- [ ] T030 [P] [US3] Write integration test for search_todos tool in tests/mcp_server/test_tools.py testing keyword matching in title
-- [ ] T031 [P] [US3] Write integration test for search_todos tool in tests/mcp_server/test_tools.py testing keyword matching in description
-- [ ] T032 [P] [US3] Write integration test for search_todos tool in tests/mcp_server/test_tools.py verifying completed/archived todos excluded from results
-- [ ] T033 [P] [US3] Write integration test for search_todos tool in tests/mcp_server/test_tools.py testing case-insensitive search and empty results
+- [X] T030 [P] [US3] Write integration test for search_todos tool in tests/mcp_server/test_tools.py testing keyword matching in title
+- [X] T031 [P] [US3] Write integration test for search_todos tool in tests/mcp_server/test_tools.py testing keyword matching in description
+- [X] T032 [P] [US3] Write integration test for search_todos tool in tests/mcp_server/test_tools.py verifying completed/archived todos excluded from results
+- [X] T033 [P] [US3] Write integration test for search_todos tool in tests/mcp_server/test_tools.py testing case-insensitive search and empty results
 
 ### Implementation for User Story 3
 
-- [ ] T034 [US3] Implement search_todos tool in src/mcp_server/tools/search_todos.py using ILIKE pattern matching on title and description fields
-- [ ] T035 [US3] Add filtering logic to search_todos to only return active todos (exclude completed and archived statuses)
-- [ ] T036 [US3] Implement case-insensitive search using SQLAlchemy .ilike() method in search_todos tool
-- [ ] T037 [US3] Register search_todos tool in src/mcp_server/server.py
-- [ ] T038 [US3] Verify contract compliance for search_todos against specs/002-fastmcp-database-server/contracts/search_todos.json
+- [X] T034 [US3] Implement search_todos tool in src/mcp_server/tools/search_todos.py using ILIKE pattern matching on title and description fields
+- [X] T035 [US3] Add filtering logic to search_todos to only return active todos (exclude completed and archived statuses)
+- [X] T036 [US3] Implement case-insensitive search using SQLAlchemy .ilike() method in search_todos tool
+- [X] T037 [US3] Register search_todos tool in src/mcp_server/server.py
+- [X] T038 [US3] Verify contract compliance for search_todos against specs/002-fastmcp-database-server/contracts/search_todos.json
 
 **Checkpoint**: All user stories 1, 2, and 3 should now be independently functional. AI agent has full search capabilities.
 
