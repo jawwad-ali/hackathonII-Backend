@@ -32,22 +32,27 @@ from fastapi import Request, Response
 from pythonjsonlogger import jsonlogger
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 
-# Context variable for storing request ID
+# Context variables for storing request metadata
 # Using contextvars ensures thread-safety in async contexts
+# T032: Added thread_id and other context metadata for full observability
 _request_id_context: ContextVar[Optional[str]] = ContextVar("request_id", default=None)
+_thread_id_context: ContextVar[Optional[str]] = ContextVar("thread_id", default=None)
 
 
 class RequestIDFilter(logging.Filter):
     """
-    Logging filter that injects request ID into log records.
+    Logging filter that injects request metadata into log records.
 
-    Automatically adds request_id field to all log entries when available
-    from the context variable.
+    T032: Extended to include thread_id and other context metadata
+    Automatically adds request_id, thread_id fields to all log entries when available
+    from the context variables.
     """
 
     def filter(self, record: logging.LogRecord) -> bool:
         """
-        Add request_id to log record from context.
+        Add request metadata to log record from context.
+
+        T032: Now includes thread_id in addition to request_id
 
         Args:
             record: Log record to augment
@@ -55,11 +60,18 @@ class RequestIDFilter(logging.Filter):
         Returns:
             True (always pass the record through)
         """
+        # Inject request_id
         request_id = _request_id_context.get()
         if request_id:
             record.request_id = request_id  # type: ignore
         else:
             record.request_id = "no-request-id"  # type: ignore
+
+        # T032: Inject thread_id
+        thread_id = _thread_id_context.get()
+        if thread_id:
+            record.thread_id = thread_id  # type: ignore
+
         return True
 
 
@@ -67,18 +79,25 @@ class CustomJsonFormatter(jsonlogger.JsonFormatter):
     """
     Custom JSON formatter for structured logging.
 
+    T032: Extended to include thread_id and context metadata
     Extends pythonjsonlogger to include standard fields:
     - timestamp
     - level
     - logger (module name)
     - message
     - request_id (from context)
+    - thread_id (from context) - T032
+    - tool_name (from extra fields for MCP tool calls) - T032
+    - execution_duration (from extra fields) - T032
+    - status (from extra fields) - T032
     - Any extra fields passed via logger.info(..., extra={...})
     """
 
     def add_fields(self, log_record: dict, record: logging.LogRecord, message_dict: dict) -> None:
         """
         Add custom fields to the JSON log record.
+
+        T032: Now includes thread_id, tool_name, execution_duration, status
 
         Args:
             log_record: Dictionary to be serialized to JSON
@@ -96,6 +115,21 @@ class CustomJsonFormatter(jsonlogger.JsonFormatter):
         # Add request_id if available (set by RequestIDFilter)
         if hasattr(record, "request_id"):
             log_record["request_id"] = record.request_id
+
+        # T032: Add thread_id if available (set by RequestIDFilter)
+        if hasattr(record, "thread_id"):
+            log_record["thread_id"] = record.thread_id
+
+        # T032: Add tool call metadata if available (from extra fields)
+        # These fields are added by tool call logging in todo_agent.py (T028)
+        if hasattr(record, "tool_name"):
+            log_record["tool_name"] = record.tool_name
+
+        if hasattr(record, "execution_duration_seconds"):
+            log_record["execution_duration_seconds"] = record.execution_duration_seconds
+
+        if hasattr(record, "tool_status") or hasattr(record, "status"):
+            log_record["status"] = getattr(record, "tool_status", getattr(record, "status", None))
 
 
 def configure_logging(log_level: str = "INFO") -> None:
@@ -190,6 +224,38 @@ def set_request_id(request_id: str) -> None:
         >>> logger.info("Processing")  # Will include request_id: req-12345
     """
     _request_id_context.set(request_id)
+
+
+def get_thread_id() -> Optional[str]:
+    """
+    Get the current thread ID from context.
+
+    T032: Added for conversation tracking across multiple requests
+
+    Returns:
+        Current thread ID or None if not set
+
+    Example:
+        >>> thread_id = get_thread_id()
+        >>> print(f"Current thread: {thread_id}")
+    """
+    return _thread_id_context.get()
+
+
+def set_thread_id(thread_id: str) -> None:
+    """
+    Set the thread ID in context.
+
+    T032: Added for conversation tracking across multiple requests
+
+    Args:
+        thread_id: Thread ID to set
+
+    Example:
+        >>> set_thread_id("thread-abc123")
+        >>> logger.info("Processing")  # Will include thread_id: thread-abc123
+    """
+    _thread_id_context.set(thread_id)
 
 
 class RequestIDMiddleware(BaseHTTPMiddleware):

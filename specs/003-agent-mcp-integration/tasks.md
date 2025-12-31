@@ -106,14 +106,14 @@ description: "Task breakdown for Agent-MCP Integration feature"
 
 ### Integration Tests for User Story 2
 
-- [ ] T023 [P] [US2] Create integration test for create_todo tool execution in tests/integration/test_agent_tools.py (verify tool call, database persistence, SSE events)
-- [ ] T024 [P] [US2] Create integration test for list_todos tool execution in tests/integration/test_agent_tools.py (verify filtering, result format, SSE events)
-- [ ] T025 [P] [US2] Create integration test for SSE event stream format in tests/integration/test_streaming.py (verify THINKING, TOOL_CALL, RESPONSE_DELTA, DONE events)
+- [X] T023 [P] [US2] Create integration test for create_todo tool execution in tests/integration/test_agent_tools.py (verify tool call, database persistence, SSE events)
+- [X] T024 [P] [US2] Create integration test for list_todos tool execution in tests/integration/test_agent_tools.py (verify filtering, result format, SSE events)
+- [X] T025 [P] [US2] Create integration test for SSE event stream format in tests/integration/test_streaming.py (verify THINKING, TOOL_CALL, RESPONSE_DELTA, DONE events)
 
 ### Implementation for User Story 2
 
-- [ ] T026 [US2] Verify existing SSE event mapping in src/api/routes.py maps OpenAI Agents SDK events to ChatKit format correctly (agent:thinking → THINKING, tool:call → TOOL_CALL, etc.)
-- [ ] T027 [US2] Test agent tool execution with all 5 CRUD operations (create, list, update, search, delete) in development environment
+- [X] T026 [US2] Verify existing SSE event mapping in src/api/routes.py maps OpenAI Agents SDK events to ChatKit format correctly (agent:thinking → THINKING, tool:call → TOOL_CALL, etc.)
+- [X] T027 [US2] Test agent tool execution with all 5 CRUD operations (create, list, update, search, delete) in development environment
 - [ ] T028 [US2] Add tool call validation logging in src/agents/todo_agent.py (log tool name, parameters, execution duration, result status)
 
 **Checkpoint**: User Story 2 complete - Users can manage todos via natural language with full CRUD operations
@@ -128,13 +128,13 @@ description: "Task breakdown for Agent-MCP Integration feature"
 
 ### Integration Tests for User Story 3
 
-- [ ] T029 [P] [US3] Create integration test for context metadata logging in tests/integration/test_agent_tools.py (verify request_id, thread_id, timestamp in logs)
+- [X] T029 [P] [US3] Create integration test for context metadata logging in tests/integration/test_agent_tools.py (verify request_id, thread_id, timestamp in logs)
 
 ### Implementation for User Story 3
 
-- [ ] T030 [US3] Add context metadata extraction from ChatRequest in src/api/routes.py (extract request_id, generate thread_id if not provided)
-- [ ] T031 [US3] Pass context metadata to agent initialization or tool calls in src/agents/todo_agent.py
-- [ ] T032 [US3] Update structured logging format in src/observability/logging.py to include request_id, thread_id, tool_name, execution_duration, status for all tool calls
+- [X] T030 [US3] Add context metadata extraction from ChatRequest in src/api/routes.py (extract request_id, generate thread_id if not provided)
+- [X] T031 [US3] Pass context metadata to agent initialization or tool calls in src/agents/todo_agent.py
+- [X] T032 [US3] Update structured logging format in src/observability/logging.py to include request_id, thread_id, tool_name, execution_duration, status for all tool calls
 
 **Checkpoint**: User Story 3 complete - Full observability with context metadata in all tool call logs
 

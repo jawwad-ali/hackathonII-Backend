@@ -407,6 +407,12 @@ async def _execute_agent_with_retry(agent: Agent, input_text: str, context: Any 
     - Max wait: 60 seconds
     - Timeout: 30 seconds per attempt (T084)
 
+    T028: Includes tool call validation logging for all MCP tool executions:
+    - Log tool name
+    - Log parameters
+    - Log execution duration
+    - Log result status (success/failure)
+
     Args:
         agent: The TodoAgent instance
         input_text: User's natural language input
@@ -421,10 +427,14 @@ async def _execute_agent_with_retry(agent: Agent, input_text: str, context: Any 
     """
     from agents_mcp import Runner
     import asyncio
+    import time
 
     # T084: Gemini API timeout constant (30 seconds)
     # This ensures each Gemini API call completes within reasonable time
     GEMINI_TIMEOUT_SECONDS = 30
+
+    # T028: Track execution start time for duration logging
+    execution_start_time = time.time()
 
     try:
         # T084: Wrap agent execution with timeout to prevent hanging on slow Gemini API
@@ -436,12 +446,25 @@ async def _execute_agent_with_retry(agent: Agent, input_text: str, context: Any 
             else:
                 result = await Runner.run(agent, input=input_text)
 
+            # T028: Calculate total execution duration
+            execution_duration = time.time() - execution_start_time
+
+            # T028: Log successful agent execution with tool call details
+            _log_tool_calls_from_result(result, execution_duration, success=True)
+
             return result
 
     except asyncio.TimeoutError as e:
         # T084: Timeout handling - convert to TimeoutError for retry logic
+        execution_duration = time.time() - execution_start_time
+
         logger.warning(
-            f"Gemini API call timed out after {GEMINI_TIMEOUT_SECONDS}s (will retry)"
+            f"Gemini API call timed out after {GEMINI_TIMEOUT_SECONDS}s (will retry)",
+            extra={
+                "execution_duration_seconds": execution_duration,
+                "timeout_seconds": GEMINI_TIMEOUT_SECONDS,
+                "result_status": "timeout"
+            }
         )
         raise TimeoutError(
             f"Gemini API execution exceeded timeout of {GEMINI_TIMEOUT_SECONDS}s"
@@ -449,13 +472,133 @@ async def _execute_agent_with_retry(agent: Agent, input_text: str, context: Any 
 
     except (ConnectionError, TimeoutError, OSError) as e:
         # These errors trigger retry logic
-        logger.warning(f"Gemini API call failed (will retry): {e}")
+        execution_duration = time.time() - execution_start_time
+
+        logger.warning(
+            f"Gemini API call failed (will retry): {e}",
+            extra={
+                "execution_duration_seconds": execution_duration,
+                "result_status": "failed",
+                "error_type": type(e).__name__
+            }
+        )
         raise
 
     except Exception as e:
         # Other errors don't trigger retry
-        logger.error(f"Agent execution failed: {e}")
+        execution_duration = time.time() - execution_start_time
+
+        logger.error(
+            f"Agent execution failed: {e}",
+            extra={
+                "execution_duration_seconds": execution_duration,
+                "result_status": "error",
+                "error_type": type(e).__name__
+            }
+        )
         raise
+
+
+def _log_tool_calls_from_result(result: Any, execution_duration: float, success: bool) -> None:
+    """
+    T028: Extract and log tool call information from agent execution result.
+
+    Logs each MCP tool call with:
+    - Tool name
+    - Tool parameters/arguments
+    - Execution duration
+    - Result status (success/failure)
+
+    Args:
+        result: Agent execution result
+        execution_duration: Total execution time in seconds
+        success: Whether execution succeeded
+    """
+    # Extract tool calls from result (structure depends on OpenAI Agents SDK)
+    # The result may contain tool_calls information in various formats
+    tool_calls = []
+
+    # Try to extract tool calls from result
+    if hasattr(result, 'tool_calls'):
+        tool_calls = result.tool_calls
+    elif isinstance(result, dict) and 'tool_calls' in result:
+        tool_calls = result['tool_calls']
+    elif hasattr(result, 'messages'):
+        # Check messages for tool call information
+        for message in result.messages:
+            if hasattr(message, 'tool_calls') and message.tool_calls:
+                tool_calls.extend(message.tool_calls)
+
+    # T028: Log overall agent execution
+    logger.info(
+        f"Agent execution completed - Duration: {execution_duration:.3f}s, Tools called: {len(tool_calls)}",
+        extra={
+            "event": "agent_execution_completed",
+            "execution_duration_seconds": round(execution_duration, 3),
+            "tools_called_count": len(tool_calls),
+            "result_status": "success" if success else "failed",
+            "agent_name": "TodoAgent"
+        }
+    )
+
+    # T028: Log each individual tool call
+    for idx, tool_call in enumerate(tool_calls):
+        # Extract tool details (format varies by SDK)
+        tool_name = None
+        tool_arguments = {}
+        tool_status = "unknown"
+
+        if hasattr(tool_call, 'function'):
+            # OpenAI SDK format with function object
+            tool_name = getattr(tool_call.function, 'name', 'unknown_tool')
+            tool_arguments_str = getattr(tool_call.function, 'arguments', '{}')
+
+            # Parse arguments from JSON string if needed
+            try:
+                import json
+                tool_arguments = json.loads(tool_arguments_str) if isinstance(tool_arguments_str, str) else tool_arguments_str
+            except (json.JSONDecodeError, TypeError):
+                tool_arguments = {"raw": tool_arguments_str}
+
+            tool_status = "completed" if success else "failed"
+
+        elif hasattr(tool_call, 'name'):
+            # Direct name attribute
+            tool_name = tool_call.name
+            tool_arguments = getattr(tool_call, 'arguments', {}) or getattr(tool_call, 'parameters', {})
+            tool_status = "completed" if success else "failed"
+
+        elif isinstance(tool_call, dict):
+            # Dictionary format
+            tool_name = tool_call.get('name') or tool_call.get('tool_name', 'unknown_tool')
+            tool_arguments = tool_call.get('arguments', {}) or tool_call.get('parameters', {})
+            tool_status = tool_call.get('status', 'completed' if success else 'failed')
+
+        # T028: Log individual tool call with full validation details
+        logger.info(
+            f"MCP Tool Call #{idx + 1}: {tool_name}",
+            extra={
+                "event": "mcp_tool_call",
+                "tool_index": idx + 1,
+                "tool_name": tool_name,
+                "tool_arguments": tool_arguments,
+                "tool_status": tool_status,
+                "execution_duration_seconds": round(execution_duration, 3),
+                "agent_name": "TodoAgent",
+                "result_status": "success" if success else "failed"
+            }
+        )
+
+        # T028: Log tool arguments in debug mode for detailed inspection
+        logger.debug(
+            f"Tool arguments for {tool_name}: {tool_arguments}",
+            extra={
+                "event": "tool_arguments_detail",
+                "tool_name": tool_name,
+                "arguments": tool_arguments,
+                "argument_count": len(tool_arguments) if isinstance(tool_arguments, dict) else 0
+            }
+        )
 
 
 async def execute_agent_with_resilience(

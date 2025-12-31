@@ -18,6 +18,7 @@ from src.api.schemas import ChatRequest, ErrorResponse
 from src.streaming.chatkit import StreamBuilder, ErrorType, ToolStatus, map_agent_event_to_chatkit
 from src.agents.todo_agent import create_todo_agent
 from src.observability.metrics import metrics_tracker
+from src.observability.logging import set_thread_id  # T031: Import for context metadata
 from src.resilience.circuit_breaker import CircuitBreakerError
 
 logger = logging.getLogger(__name__)
@@ -186,7 +187,8 @@ def format_todo_list(todos: Any) -> str:
 async def chat_stream_generator(
     message: str,
     request_id: str,
-    mcp_server: Optional[MCPServerStdio]
+    mcp_server: Optional[MCPServerStdio],
+    context_metadata: Optional[dict] = None
 ) -> AsyncGenerator[str, None]:
     """
     Async generator that yields SSE events for the chat stream.
@@ -195,11 +197,13 @@ async def chat_stream_generator(
     natural language todo operations and stream the results in ChatKit format.
 
     T013: Uses mcp_server from app.state to initialize agent with MCP tools
+    T030: Accepts context_metadata for observability (request_id, thread_id, timestamp)
 
     Args:
         message: Sanitized user message from ChatRequest
         request_id: Request ID for correlation and logging
         mcp_server: MCPServerStdio instance from app.state.mcp_server (or None for degraded mode)
+        context_metadata: Optional dict with request_id, thread_id, timestamp for observability
 
     Yields:
         SSE formatted event strings (thinking, tool_call, response_delta, error, done)
@@ -245,11 +249,27 @@ async def chat_stream_generator(
     detected_intent = None
 
     try:
-        # Log request received
+        # T031: Use context_metadata for logging throughout execution
+        # Default context if not provided
+        if context_metadata is None:
+            context_metadata = {
+                "request_id": request_id,
+                "thread_id": f"thread_{uuid.uuid4()}",
+                "timestamp": time.time()
+            }
+
+        # T031: Set thread_id in logging context for automatic injection into all logs
+        thread_id = context_metadata.get("thread_id")
+        if thread_id:
+            set_thread_id(thread_id)
+
+        # Log request received with full context metadata
         logger.info(
             f"Chat stream started",
             extra={
-                "request_id": request_id,
+                "request_id": context_metadata.get("request_id", request_id),
+                "thread_id": thread_id,
+                "timestamp": context_metadata.get("timestamp"),
                 "message_length": len(message)
             }
         )
@@ -380,10 +400,13 @@ async def chat_stream_generator(
             input=message
         )
 
+        # T031: Include context metadata in all logging
         logger.info(
             f"Runner.run_streamed() initiated",
             extra={
-                "request_id": request_id,
+                "request_id": context_metadata.get("request_id", request_id),
+                "thread_id": context_metadata.get("thread_id"),
+                "timestamp": context_metadata.get("timestamp"),
                 "has_mcp_tools": mcp_server is not None
             }
         )
@@ -1190,13 +1213,25 @@ async def stream_chat(chat_request: ChatRequest, request: Request) -> StreamingR
             event: done
             data: {"final_output": "...", "tools_called": ["create_todo"], "success": true}
     """
-    # Generate or use provided request ID
+    # T030: Extract context metadata from ChatRequest
+    # Generate request_id if not provided
     request_id = chat_request.request_id or str(uuid.uuid4())
+
+    # Generate thread_id if not provided (for conversation tracking)
+    thread_id = chat_request.thread_id or f"thread_{uuid.uuid4()}"
+
+    # Create context metadata dictionary for observability
+    context_metadata = {
+        "request_id": request_id,
+        "thread_id": thread_id,
+        "timestamp": time.time()
+    }
 
     logger.info(
         f"Received chat stream request",
         extra={
             "request_id": request_id,
+            "thread_id": thread_id,
             "message_preview": chat_request.message[:50] + "..." if len(chat_request.message) > 50 else chat_request.message
         }
     )
@@ -1216,11 +1251,13 @@ async def stream_chat(chat_request: ChatRequest, request: Request) -> StreamingR
             )
 
         # Create the streaming response
+        # T030: Pass context_metadata to generator for observability
         return StreamingResponse(
             chat_stream_generator(
                 message=chat_request.message,
                 request_id=request_id,
-                mcp_server=mcp_server
+                mcp_server=mcp_server,
+                context_metadata=context_metadata
             ),
             media_type="text/event-stream",
             headers={

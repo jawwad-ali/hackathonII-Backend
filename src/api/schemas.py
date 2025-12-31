@@ -32,6 +32,11 @@ class ChatRequest(BaseModel):
         description="Optional client-provided request ID for correlation"
     )
 
+    thread_id: Optional[str] = Field(
+        None,
+        description="Optional thread ID for conversation tracking across multiple requests"
+    )
+
     @field_validator('message')
     @classmethod
     def sanitize_message(cls, v: str) -> str:
@@ -75,7 +80,8 @@ class ChatRequest(BaseModel):
         json_schema_extra = {
             "example": {
                 "message": "Remind me to buy eggs tomorrow at 3pm",
-                "request_id": "req_123abc"
+                "request_id": "req_123abc",
+                "thread_id": "thread_456def"
             }
         }
 

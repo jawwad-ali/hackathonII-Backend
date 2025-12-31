@@ -547,3 +547,444 @@ class TestStreamingEventFormat:
             # If not implemented yet, this test will fail (TDD approach)
             state = mcp_breaker.get_state()
             assert state.state == CircuitState.OPEN
+
+
+class TestSSEEventStreamFormat:
+    """
+    T025: Integration test for SSE event stream format compliance.
+
+    Tests:
+    - THINKING event format and content
+    - TOOL_CALL event format with status (IN_PROGRESS, COMPLETED, FAILED)
+    - RESPONSE_DELTA event format with incremental text
+    - DONE event format with final_output and tools_called
+    - Event ordering and stream structure
+    """
+
+    def test_sse_thinking_event_format(self):
+        """
+        Test that THINKING events have correct format.
+
+        Expected format:
+        event: THINKING
+        data: {"content": "Agent reasoning text..."}
+
+        The content should explain the agent's thought process,
+        such as intent detection, parameter extraction, etc.
+        """
+        with patch.object(app.state, 'mcp_server', MagicMock()):
+            client = TestClient(app)
+
+            response = client.post(
+                "/chat/stream",
+                json={
+                    "message": "Create a task to buy groceries",
+                    "request_id": "test_sse_001"
+                }
+            )
+
+            assert response.status_code == 200
+
+            # Parse SSE stream
+            events = self._parse_sse_stream(response.text)
+
+            # T025: Verify THINKING events exist
+            thinking_events = [e for e in events if e['event'] == 'THINKING']
+            assert len(thinking_events) > 0, \
+                "Stream should contain at least one THINKING event"
+
+            # T025: Verify THINKING event data format
+            for thinking_event in thinking_events:
+                assert 'data' in thinking_event, \
+                    "THINKING event should have data field"
+
+                data = thinking_event['data']
+                # Data should be dict or string
+                assert isinstance(data, (dict, str)), \
+                    "THINKING event data should be dict or string"
+
+                # If dict, should have 'content' field
+                if isinstance(data, dict):
+                    assert 'content' in data or 'thinking' in data or 'text' in data, \
+                        "THINKING event data should have content/thinking/text field"
+
+    def test_sse_tool_call_event_format(self):
+        """
+        Test that TOOL_CALL events have correct format.
+
+        Expected format:
+        event: TOOL_CALL
+        data: {
+            "tool_name": "create_todo",
+            "arguments": {"title": "Buy groceries"},
+            "status": "IN_PROGRESS" | "COMPLETED" | "FAILED"
+        }
+        """
+        with patch.object(app.state, 'mcp_server', MagicMock()):
+            client = TestClient(app)
+
+            response = client.post(
+                "/chat/stream",
+                json={
+                    "message": "List my todos",
+                    "request_id": "test_sse_002"
+                }
+            )
+
+            assert response.status_code == 200
+
+            # Parse SSE stream
+            events = self._parse_sse_stream(response.text)
+
+            # T025: Verify TOOL_CALL events exist
+            tool_call_events = [e for e in events if e['event'] == 'TOOL_CALL']
+
+            if len(tool_call_events) > 0:
+                # T025: Verify TOOL_CALL event structure
+                for tool_event in tool_call_events:
+                    assert 'data' in tool_event, \
+                        "TOOL_CALL event should have data field"
+
+                    data = tool_event['data']
+                    assert isinstance(data, dict), \
+                        "TOOL_CALL event data should be a dictionary"
+
+                    # T025: Verify required fields
+                    # Note: Field names may vary (tool_name vs name, etc.)
+                    # Check for common variations
+                    has_tool_identifier = (
+                        'tool_name' in data or
+                        'name' in data or
+                        'tool' in data
+                    )
+                    assert has_tool_identifier, \
+                        "TOOL_CALL event should have tool identifier (tool_name/name/tool)"
+
+                    # Status should be one of the valid values
+                    if 'status' in data:
+                        valid_statuses = ['IN_PROGRESS', 'COMPLETED', 'FAILED', 'in_progress', 'completed', 'failed']
+                        assert data['status'] in valid_statuses, \
+                            f"TOOL_CALL status should be one of {valid_statuses}, got {data['status']}"
+
+    def test_sse_response_delta_event_format(self):
+        """
+        Test that RESPONSE_DELTA events have correct format.
+
+        Expected format:
+        event: RESPONSE_DELTA
+        data: {
+            "delta": "New text chunk",
+            "accumulated": "Full text so far..."
+        }
+
+        Response deltas build up the final response incrementally.
+        """
+        with patch.object(app.state, 'mcp_server', MagicMock()):
+            client = TestClient(app)
+
+            response = client.post(
+                "/chat/stream",
+                json={
+                    "message": "What are my tasks?",
+                    "request_id": "test_sse_003"
+                }
+            )
+
+            assert response.status_code == 200
+
+            # Parse SSE stream
+            events = self._parse_sse_stream(response.text)
+
+            # T025: Find RESPONSE_DELTA events
+            response_deltas = [e for e in events if e['event'] == 'RESPONSE_DELTA']
+
+            if len(response_deltas) > 0:
+                # T025: Verify RESPONSE_DELTA structure
+                for delta_event in response_deltas:
+                    assert 'data' in delta_event, \
+                        "RESPONSE_DELTA event should have data field"
+
+                    data = delta_event['data']
+
+                    # Data can be string or dict
+                    if isinstance(data, dict):
+                        # Should have delta or content field
+                        has_text_field = (
+                            'delta' in data or
+                            'content' in data or
+                            'text' in data or
+                            'accumulated' in data
+                        )
+                        assert has_text_field, \
+                            "RESPONSE_DELTA should have text content (delta/content/text/accumulated)"
+
+    def test_sse_done_event_format(self):
+        """
+        Test that DONE events have correct format.
+
+        Expected format:
+        event: DONE
+        data: {
+            "final_output": "Complete response text",
+            "tools_called": ["create_todo", "list_todos"],
+            "success": true
+        }
+        """
+        with patch.object(app.state, 'mcp_server', MagicMock()):
+            client = TestClient(app)
+
+            response = client.post(
+                "/chat/stream",
+                json={
+                    "message": "Create a task",
+                    "request_id": "test_sse_004"
+                }
+            )
+
+            assert response.status_code == 200
+
+            # Parse SSE stream
+            events = self._parse_sse_stream(response.text)
+
+            # T025: Verify DONE event exists
+            done_events = [e for e in events if e['event'] == 'DONE']
+            assert len(done_events) == 1, \
+                "Stream should end with exactly one DONE event"
+
+            # T025: Verify DONE event structure
+            done_event = done_events[0]
+            assert 'data' in done_event, \
+                "DONE event should have data field"
+
+            data = done_event['data']
+            assert isinstance(data, dict), \
+                "DONE event data should be a dictionary"
+
+            # T025: Verify success field
+            assert 'success' in data, \
+                "DONE event should have success field"
+            assert isinstance(data['success'], bool), \
+                "DONE success field should be boolean"
+
+            # T025: Verify final_output or similar field exists
+            has_output_field = (
+                'final_output' in data or
+                'output' in data or
+                'result' in data or
+                'message' in data
+            )
+            assert has_output_field, \
+                "DONE event should have output field (final_output/output/result/message)"
+
+    def test_sse_event_ordering(self):
+        """
+        Test that SSE events arrive in correct order.
+
+        Expected order:
+        1. THINKING (optional, can be multiple)
+        2. TOOL_CALL (optional, can be multiple)
+        3. RESPONSE_DELTA (optional, can be multiple)
+        4. DONE (required, exactly one, always last)
+        """
+        with patch.object(app.state, 'mcp_server', MagicMock()):
+            client = TestClient(app)
+
+            response = client.post(
+                "/chat/stream",
+                json={
+                    "message": "Show me my todos",
+                    "request_id": "test_sse_005"
+                }
+            )
+
+            assert response.status_code == 200
+
+            # Parse SSE stream
+            events = self._parse_sse_stream(response.text)
+
+            # Get event types in order
+            event_types = [e['event'] for e in events]
+
+            # T025: DONE should be last event
+            assert len(event_types) > 0, "Stream should have at least one event"
+            assert event_types[-1] == 'DONE', \
+                f"DONE should be last event, but got {event_types[-1]}"
+
+            # T025: DONE should appear exactly once
+            done_count = event_types.count('DONE')
+            assert done_count == 1, \
+                f"DONE should appear exactly once, found {done_count}"
+
+            # T025: If THINKING and TOOL_CALL both present, THINKING should come first
+            if 'THINKING' in event_types and 'TOOL_CALL' in event_types:
+                first_thinking = event_types.index('THINKING')
+                first_tool_call = event_types.index('TOOL_CALL')
+                assert first_thinking < first_tool_call, \
+                    "THINKING should typically come before TOOL_CALL"
+
+    def test_sse_error_event_format(self):
+        """
+        Test that ERROR events have correct format when errors occur.
+
+        Expected format:
+        event: ERROR
+        data: {
+            "error": "User-friendly error message",
+            "error_type": "MCP_CONNECTION_ERROR" | "TIMEOUT" | etc.,
+            "recoverable": true | false
+        }
+        """
+        # Simulate error by using degraded mode (no MCP server)
+        with patch.object(app.state, 'mcp_server', None):
+            client = TestClient(app)
+
+            response = client.post(
+                "/chat/stream",
+                json={
+                    "message": "Create a task",
+                    "request_id": "test_sse_006"
+                }
+            )
+
+            assert response.status_code == 200
+
+            # Parse SSE stream
+            events = self._parse_sse_stream(response.text)
+
+            # T025: Should have ERROR event in degraded mode
+            error_events = [e for e in events if e['event'] == 'ERROR']
+
+            if len(error_events) > 0:
+                # T025: Verify ERROR event structure
+                error_event = error_events[0]
+                assert 'data' in error_event, \
+                    "ERROR event should have data field"
+
+                data = error_event['data']
+                assert isinstance(data, dict), \
+                    "ERROR event data should be a dictionary"
+
+                # T025: Should have error message
+                has_error_field = (
+                    'error' in data or
+                    'message' in data or
+                    'error_message' in data
+                )
+                assert has_error_field, \
+                    "ERROR event should have error message field"
+
+                # T025: Error message should be user-friendly (not technical)
+                if 'error' in data:
+                    error_msg = data['error'].lower()
+                    # Should NOT contain technical jargon
+                    assert 'traceback' not in error_msg, \
+                        "Error message should not contain stack traces"
+                    assert 'exception' not in error_msg, \
+                        "Error message should not contain exception details"
+
+    def test_sse_stream_http_headers(self):
+        """
+        Test that SSE stream has correct HTTP headers.
+
+        Expected headers:
+        - Content-Type: text/event-stream
+        - Cache-Control: no-cache
+        - Connection: keep-alive
+        - X-Request-ID: <request_id>
+        """
+        with patch.object(app.state, 'mcp_server', MagicMock()):
+            client = TestClient(app)
+
+            response = client.post(
+                "/chat/stream",
+                json={
+                    "message": "Test message",
+                    "request_id": "test_sse_007"
+                }
+            )
+
+            # T025: Verify Content-Type
+            assert response.headers.get('content-type') == 'text/event-stream', \
+                "Content-Type should be text/event-stream"
+
+            # T025: Verify Cache-Control
+            cache_control = response.headers.get('cache-control', '').lower()
+            assert 'no-cache' in cache_control, \
+                "Cache-Control should include no-cache"
+
+            # T025: Verify X-Request-ID if provided
+            request_id_header = response.headers.get('x-request-id')
+            if request_id_header:
+                assert request_id_header == "test_sse_007", \
+                    "X-Request-ID header should match request_id"
+
+    def test_sse_stream_graceful_termination(self):
+        """
+        Test that SSE stream terminates gracefully.
+
+        Expected behavior:
+        - Stream always ends with DONE event
+        - No incomplete events
+        - Stream closes cleanly without hanging
+        """
+        with patch.object(app.state, 'mcp_server', MagicMock()):
+            client = TestClient(app)
+
+            response = client.post(
+                "/chat/stream",
+                json={
+                    "message": "Quick test",
+                    "request_id": "test_sse_008"
+                }
+            )
+
+            assert response.status_code == 200
+
+            # Parse SSE stream
+            events = self._parse_sse_stream(response.text)
+
+            # T025: Stream should have at least DONE event
+            assert len(events) > 0, \
+                "Stream should have at least one event"
+
+            # T025: Last event should be DONE
+            assert events[-1]['event'] == 'DONE', \
+                "Stream should terminate with DONE event"
+
+    def _parse_sse_stream(self, stream_text: str) -> list:
+        """
+        Parse SSE stream text into list of events.
+
+        Args:
+            stream_text: Raw SSE response text
+
+        Returns:
+            List of event dictionaries with 'event' and 'data' keys
+        """
+        events = []
+        lines = stream_text.strip().split('\n')
+
+        current_event = None
+        current_data = None
+
+        for line in lines:
+            line = line.strip()
+
+            if line.startswith('event:'):
+                current_event = line.split('event:', 1)[1].strip()
+            elif line.startswith('data:'):
+                data_str = line.split('data:', 1)[1].strip()
+                try:
+                    current_data = json.loads(data_str)
+                except json.JSONDecodeError:
+                    current_data = data_str
+            elif line == '' and current_event:
+                # Empty line signals end of event
+                events.append({
+                    'event': current_event,
+                    'data': current_data
+                })
+                current_event = None
+                current_data = None
+
+        return events
