@@ -6,7 +6,8 @@ Includes circuit breaker and retry logic for Gemini API resilience.
 """
 
 from agents import Agent, set_default_openai_client
-from typing import List, Any, Dict
+from agents.mcp import MCPServerStdio
+from typing import List, Any, Dict, Optional
 from src.config import get_gemini_client, get_gemini_circuit_breaker
 from src.resilience.circuit_breaker import CircuitBreakerError
 from src.resilience.retry import gemini_retry
@@ -309,7 +310,7 @@ Key behaviors:
 """
 
 
-def create_todo_agent(mcp_servers: List[str] = None) -> Agent:
+def create_todo_agent(mcp_servers: Optional[List[MCPServerStdio]] = None) -> Agent:
     """
     Create and configure the TodoAgent using OpenAI Agents SDK.
 
@@ -323,16 +324,21 @@ def create_todo_agent(mcp_servers: List[str] = None) -> Agent:
     specified MCP servers at agent initialization time.
 
     Args:
-        mcp_servers: List of MCP server names for tool discovery
-                    (e.g., ["todo_server"]). If None, agent is created
-                    without MCP tools (for testing).
+        mcp_servers: Optional list of MCPServerStdio instances for tool discovery.
+                    Each instance represents a connected MCP server with available tools.
+                    The Agent constructor automatically discovers and registers all tools
+                    exposed by these servers via the MCP protocol.
+                    If None or empty list, agent is created without MCP tools (for testing).
 
     Returns:
         Agent: Configured TodoAgent instance with registered MCP tools
 
     Example:
         >>> # Create agent with MCP tools
-        >>> agent = create_todo_agent(mcp_servers=["todo_server"])
+        >>> from src.mcp.client import initialize_mcp_connection
+        >>> mcp_server = await initialize_mcp_connection()
+        >>> if mcp_server:
+        ...     agent = create_todo_agent(mcp_servers=[mcp_server])
         >>>
         >>> # Create agent without tools (for testing)
         >>> agent = create_todo_agent()
@@ -340,8 +346,53 @@ def create_todo_agent(mcp_servers: List[str] = None) -> Agent:
     agent = Agent(
         name="TodoAgent",
         instructions=TODO_AGENT_INSTRUCTIONS,
-        mcp_servers=mcp_servers or [],  # Register MCP tools from specified servers
+        mcp_servers=mcp_servers or [],  # Pass MCPServerStdio instances to Agent
     )
+
+    # T015: Log tool discovery with all discovered tool names
+    # The Agent object has a 'tools' attribute that contains all registered tools
+    # after MCP servers are connected during Agent initialization
+    discovered_tool_names = []
+
+    if hasattr(agent, 'tools') and agent.tools:
+        # Extract tool names from the agent's tools
+        discovered_tool_names = [tool.name if hasattr(tool, 'name') else str(tool) for tool in agent.tools]
+
+        logger.info(
+            f"TodoAgent created with {len(mcp_servers) if mcp_servers else 0} MCP server(s) - "
+            f"Discovered {len(discovered_tool_names)} tools",
+            extra={
+                "mcp_servers_count": len(mcp_servers) if mcp_servers else 0,
+                "discovered_tools_count": len(discovered_tool_names),
+                "discovered_tools": discovered_tool_names,
+                "agent_name": "TodoAgent"
+            }
+        )
+
+        # T015: Log each discovered tool individually for detailed observability
+        for tool_name in discovered_tool_names:
+            logger.debug(
+                f"Tool discovered: {tool_name}",
+                extra={
+                    "tool_name": tool_name,
+                    "agent_name": "TodoAgent",
+                    "event": "tool_discovered"
+                }
+            )
+    else:
+        # No tools discovered (degraded mode or no MCP servers provided)
+        logger.info(
+            f"TodoAgent created with {len(mcp_servers) if mcp_servers else 0} MCP server(s) - "
+            f"No tools discovered (degraded mode)",
+            extra={
+                "mcp_servers_count": len(mcp_servers) if mcp_servers else 0,
+                "discovered_tools_count": 0,
+                "discovered_tools": [],
+                "agent_name": "TodoAgent",
+                "degraded_mode": True
+            }
+        )
+
     return agent
 
 

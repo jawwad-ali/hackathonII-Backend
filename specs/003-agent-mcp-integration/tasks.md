@@ -64,10 +64,10 @@ description: "Task breakdown for Agent-MCP Integration feature"
 
 ### Implementation for User Story 1
 
-- [ ] T012 [US1] Update src/agents/todo_agent.py to accept mcp_servers parameter and pass to Agent constructor
-- [ ] T013 [US1] Create agent initialization function in src/api/routes.py that uses app.state.mcp_server
-- [ ] T014 [US1] Update POST /chat/stream endpoint in src/api/routes.py to check app.state.mcp_server and return degraded mode error if None
-- [ ] T015 [US1] Add structured logging for tool discovery in src/agents/todo_agent.py (log all discovered tool names)
+- [X] T012 [US1] Update src/agents/todo_agent.py to accept mcp_servers parameter and pass to Agent constructor
+- [X] T013 [US1] Create agent initialization function in src/api/routes.py that uses app.state.mcp_server
+- [X] T014 [US1] Update POST /chat/stream endpoint in src/api/routes.py to check app.state.mcp_server and return degraded mode error if None
+- [X] T015 [US1] Add structured logging for tool discovery in src/agents/todo_agent.py (log all discovered tool names)
 
 **Checkpoint**: User Story 1 complete - Agent successfully discovers MCP tools on startup and handles connection failures gracefully
 
