@@ -83,16 +83,16 @@ description: "Task breakdown for Agent-MCP Integration feature"
 
 ### Integration Tests for User Story 4
 
-- [ ] T016 [P] [US4] Create integration test for circuit breaker degradation in tests/integration/test_streaming.py (simulate MCP failure, verify error response format)
-- [ ] T017 [P] [US4] Create integration test for circuit breaker recovery in tests/integration/test_streaming.py (verify HALF-OPEN state, successful retry)
+- [X] T016 [P] [US4] Create integration test for circuit breaker degradation in tests/integration/test_streaming.py (simulate MCP failure, verify error response format)
+- [X] T017 [P] [US4] Create integration test for circuit breaker recovery in tests/integration/test_streaming.py (verify HALF-OPEN state, successful retry)
 
 ### Implementation for User Story 4
 
-- [ ] T018 [US4] Add CircuitBreakerOpenError exception handling in POST /chat/stream endpoint in src/api/routes.py (return HTTP 200 with degraded error)
-- [ ] T019 [US4] Update error response format in src/api/schemas.py to include status field (error, degraded)
-- [ ] T020 [US4] Add retry logic with 3 attempts and exponential backoff for MCP tool calls in src/resilience/retry.py
-- [ ] T021 [US4] Verify circuit breaker configuration in src/resilience/circuit_breaker.py (5 failures for MCP, 30s recovery timeout)
-- [ ] T022 [US4] Add logging for circuit breaker state transitions (CLOSED → OPEN → HALF-OPEN → CLOSED) in src/observability/logging.py
+- [X] T018 [US4] Add CircuitBreakerOpenError exception handling in POST /chat/stream endpoint in src/api/routes.py (return HTTP 200 with degraded error)
+- [X] T019 [US4] Update error response format in src/api/schemas.py to include status field (error, degraded)
+- [X] T020 [US4] Add retry logic with 3 attempts and exponential backoff for MCP tool calls in src/resilience/retry.py
+- [X] T021 [US4] Verify circuit breaker configuration in src/resilience/circuit_breaker.py (5 failures for MCP, 30s recovery timeout)
+- [X] T022 [US4] Add logging for circuit breaker state transitions (CLOSED → OPEN → HALF-OPEN → CLOSED) in src/observability/logging.py
 
 **Checkpoint**: User Story 4 complete - System handles MCP failures gracefully with circuit breaker and retry logic
 

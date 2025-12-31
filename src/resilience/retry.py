@@ -34,9 +34,11 @@ RETRIABLE_EXCEPTIONS = (
 def create_mcp_retry_decorator():
     """Create retry decorator for MCP server calls
 
+    T020: Configured with 3 attempts and exponential backoff per requirements
+
     Configuration:
-        - Max attempts: 5
-        - Exponential backoff: 1s → 2s → 4s → 8s → 16s (with jitter)
+        - Max attempts: 3
+        - Exponential backoff: 1s → 2s → 4s (with jitter)
         - Max wait: 30 seconds
         - Jitter: Random 0-1 second added to prevent thundering herd
 
@@ -54,15 +56,13 @@ def create_mcp_retry_decorator():
         Tenacity retry decorator configured for MCP calls
     """
     return retry(
-        # Stop after 5 attempts (1 initial + 4 retries)
-        stop=stop_after_attempt(5),
+        # T020: Stop after 3 attempts (1 initial + 2 retries) per requirements
+        stop=stop_after_attempt(3),
 
         # Exponential backoff: wait = 2^attempt + jitter (max 30s)
         # Attempt 1: 1s + jitter
         # Attempt 2: 2s + jitter
-        # Attempt 3: 4s + jitter
-        # Attempt 4: 8s + jitter
-        # Attempt 5: 16s + jitter (capped at 30s)
+        # Attempt 3: 4s + jitter (capped at 30s)
         wait=wait_exponential(
             multiplier=1,
             min=1,
