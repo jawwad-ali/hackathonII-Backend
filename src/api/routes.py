@@ -16,7 +16,6 @@ from agents import Runner
 from src.api.schemas import ChatRequest, ErrorResponse
 from src.streaming.chatkit import StreamBuilder, ErrorType, ToolStatus, map_agent_event_to_chatkit
 from src.agents.todo_agent import create_todo_agent
-from src.mcp.client import get_runner_context, discover_mcp_tools
 from src.observability.metrics import metrics_tracker
 from src.resilience.circuit_breaker import CircuitBreakerError
 

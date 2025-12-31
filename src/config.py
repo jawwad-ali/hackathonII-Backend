@@ -50,7 +50,7 @@ class Settings(BaseSettings):
         description="MCP server arguments (comma-separated)",
     )
     MCP_SERVER_TIMEOUT: int = Field(
-        default=30, description="MCP server timeout in seconds"
+        default=5, description="MCP server timeout in seconds"
     )
 
     # Circuit Breaker Configuration

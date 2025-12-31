@@ -13,8 +13,8 @@ import time
 # Import configuration
 from src.config import settings, get_gemini_circuit_breaker
 
-# Import MCP client for circuit breaker access
-from src.mcp.client import get_mcp_circuit_breaker
+# Import MCP client for circuit breaker access and initialization
+from src.mcp.client import get_mcp_circuit_breaker, initialize_mcp_connection, get_discovered_tools
 
 # Import observability components
 from src.observability import (
@@ -42,16 +42,104 @@ async def lifespan(app: FastAPI):
     """
     Application lifespan manager.
     Handles startup and shutdown events.
+
+    T005: Initialize MCP connection on startup and store in app.state.mcp_server
+    T006: Implement graceful degraded mode handling (set app.state.mcp_server = None on failure)
     """
     # Startup
     logger.info("Starting AI Agent Orchestrator...")
     logger.info(f"Environment: {settings.APP_ENV}")
     logger.info(f"Log Level: {settings.LOG_LEVEL}")
 
+    # T005: Initialize MCP connection on startup
+    logger.info("Initializing MCP server connection...")
+    startup_start = time.time()
+
+    try:
+        # Initialize MCP connection using MCPServerStdio
+        # This spawns the FastMCP server as a subprocess with stdio transport
+        mcp_server = await initialize_mcp_connection()
+
+        if mcp_server is not None:
+            # T005: Store MCP server connection in app.state for endpoint access
+            app.state.mcp_server = mcp_server
+
+            initialization_time = time.time() - startup_start
+
+            # T007: Discover and log available tools from MCP server
+            try:
+                discovered_tools = await get_discovered_tools(mcp_server)
+                tools_count = len(discovered_tools)
+
+                logger.info(
+                    f"MCP server connection initialized successfully in {initialization_time:.2f}s",
+                    extra={
+                        "initialization_time_seconds": initialization_time,
+                        "mcp_server_name": "TodoDatabaseServer",
+                        "transport": "stdio",
+                        "discovered_tools_count": tools_count,
+                        "discovered_tools": discovered_tools
+                    }
+                )
+
+                # Log individual tools for detailed observability
+                logger.info(
+                    f"Discovered {tools_count} MCP tools: {', '.join(discovered_tools)}",
+                    extra={
+                        "tools": discovered_tools,
+                        "tools_count": tools_count
+                    }
+                )
+            except Exception as tool_discovery_error:
+                # Tool discovery failed, but connection succeeded
+                # Log warning and continue (degraded functionality)
+                logger.warning(
+                    f"MCP server connected but tool discovery failed: {tool_discovery_error}",
+                    extra={
+                        "initialization_time_seconds": initialization_time,
+                        "tool_discovery_error": str(tool_discovery_error),
+                        "error_type": type(tool_discovery_error).__name__
+                    }
+                )
+        else:
+            # T006: Graceful degraded mode - MCP connection failed but app continues
+            app.state.mcp_server = None
+            logger.warning(
+                "MCP server connection failed - entering degraded mode",
+                extra={
+                    "degraded_mode": True,
+                    "reason": "MCP initialization returned None"
+                }
+            )
+    except Exception as e:
+        # T006: Additional safety - catch any unexpected exceptions
+        app.state.mcp_server = None
+        logger.error(
+            f"Unexpected error during MCP initialization: {e}",
+            extra={
+                "degraded_mode": True,
+                "error": str(e),
+                "error_type": type(e).__name__
+            }
+        )
+
+    logger.info("AI Agent Orchestrator startup complete")
+
     yield
 
     # Shutdown
     logger.info("Shutting down AI Agent Orchestrator...")
+
+    # Close MCP connection if it exists
+    if hasattr(app.state, 'mcp_server') and app.state.mcp_server is not None:
+        try:
+            logger.info("Closing MCP server connection...")
+            await app.state.mcp_server.__aexit__(None, None, None)
+            logger.info("MCP server connection closed successfully")
+        except Exception as e:
+            logger.error(f"Error closing MCP server connection: {e}")
+
+    logger.info("AI Agent Orchestrator shutdown complete")
 
 
 # Initialize FastAPI application
@@ -81,19 +169,20 @@ app.include_router(chat_router)
 @app.get("/health")
 async def health_check(response: Response):
     """
-    Health check endpoint with circuit breaker status (T086).
+    Health check endpoint with circuit breaker status (T008).
 
     Returns detailed service health status including circuit breaker states,
     uptime metrics, and external dependency health. Used for monitoring,
     load balancer health checks, and SLO compliance verification.
 
-    T086: Returns 503 status code when both circuit breakers are open per openapi.yaml.
+    T008: Always returns HTTP 200 to enable graceful degradation (per FR-010, SC-013).
+    Monitors should check the "status" field in response body for actual health state.
 
     Args:
         response: FastAPI Response object for setting status code
 
     Returns:
-        dict: HealthResponse per openapi.yaml schema with:
+        dict: HealthResponse schema with:
             - status: "healthy" | "degraded" | "unhealthy"
             - timestamp: Current server time (ISO 8601 UTC)
             - uptime_seconds: Time since service started
@@ -101,8 +190,10 @@ async def health_check(response: Response):
             - metrics: Request statistics
 
     Status Codes:
-        200: Service is healthy or degraded (at least one dependency available)
-        503: Service is unhealthy (both circuit breakers open - no dependencies available)
+        200: Always returned (check response body "status" field for health state)
+            - "healthy": All services operational
+            - "degraded": One circuit breaker open (graceful degradation)
+            - "unhealthy": Both circuit breakers open (app still responds)
     """
     # Get circuit breaker instances
     mcp_breaker = get_mcp_circuit_breaker()
@@ -164,11 +255,18 @@ async def health_check(response: Response):
         "success_rate": round(success_rate, 2)
     }
 
-    # T086: Set HTTP status code based on health status per openapi.yaml
-    # - 200: healthy or degraded (at least one dependency available)
-    # - 503: unhealthy (both circuit breakers open - service cannot function)
+    # T008: Updated health check per spec requirements (FR-010, SC-013)
+    # - HTTP 200 with status="healthy": All services operational
+    # - HTTP 200 with status="degraded": MCP down but Gemini available (graceful degradation)
+    # - HTTP 200 with status="degraded": Gemini down but MCP available (rare case)
+    # - HTTP 200 with status="unhealthy": Both down (app still responds for monitoring)
+    #
+    # Always return HTTP 200 to indicate the app is responding.
+    # Load balancers and monitors should check the "status" field in response body.
+    response.status_code = 200
+
+    # Log health status for monitoring
     if status == "unhealthy":
-        response.status_code = 503  # Service Unavailable
         logger.warning(
             "Health check: Service unhealthy - both circuit breakers open",
             extra={
@@ -177,8 +275,15 @@ async def health_check(response: Response):
                 "gemini_state": gemini_state.state.value
             }
         )
-    else:
-        response.status_code = 200  # OK (healthy or degraded)
+    elif status == "degraded":
+        logger.info(
+            "Health check: Service degraded - one circuit breaker open",
+            extra={
+                "status": status,
+                "mcp_state": mcp_state.state.value,
+                "gemini_state": gemini_state.state.value
+            }
+        )
 
     # Build HealthResponse per openapi.yaml schema
     health_response = {

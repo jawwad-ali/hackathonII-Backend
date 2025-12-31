@@ -26,9 +26,9 @@ description: "Task breakdown for Agent-MCP Integration feature"
 
 **Purpose**: Environment configuration and dependency verification
 
-- [ ] T001 Update MCP_SERVER_TIMEOUT from 30s to 5s in src/config.py
-- [ ] T002 [P] Verify all 5 CRUD tools exist in src/mcp_server/tools/ (create_todo.py, list_todos.py, update_todo.py, search_todos.py, delete_todo.py)
-- [ ] T003 [P] Update .env.example with MCP_SERVER_TIMEOUT=5 and document required environment variables
+- [X] T001 Update MCP_SERVER_TIMEOUT from 30s to 5s in src/config.py
+- [X] T002 [P] Verify all 5 CRUD tools exist in src/mcp_server/tools/ (create_todo.py, list_todos.py, update_todo.py, search_todos.py, delete_todo.py)
+- [X] T003 [P] Update .env.example with MCP_SERVER_TIMEOUT=5 and document required environment variables
 
 ---
 
@@ -38,13 +38,13 @@ description: "Task breakdown for Agent-MCP Integration feature"
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T004 Create MCP connection initialization function in src/mcp/client.py using MCPServerStdio
-- [ ] T005 Enhance FastAPI lifespan in src/main.py to initialize MCP connection on startup and store in app.state.mcp_server
-- [ ] T006 Implement graceful degraded mode handling in lifespan (set app.state.mcp_server = None on failure)
-- [ ] T007 Add MCP connection logging with initialization time and discovered tools count in src/main.py
-- [ ] T008 Update /health endpoint in src/api/routes.py to include MCP circuit breaker status and return HTTP 200 with status="degraded" when MCP down
+- [X] T004 Create MCP connection initialization function in src/mcp/client.py using MCPServerStdio
+- [X] T005 Enhance FastAPI lifespan in src/main.py to initialize MCP connection on startup and store in app.state.mcp_server
+- [X] T006 Implement graceful degraded mode handling in lifespan (set app.state.mcp_server = None on failure)
+- [X] T007 Add MCP connection logging with initialization time and discovered tools count in src/main.py
+- [X] T008 Update /health endpoint in src/api/routes.py to include MCP circuit breaker status and return HTTP 200 with status="degraded" when MCP down
 
-**Checkpoint**: Foundation ready - MCP connection infrastructure complete, user story implementation can now begin
+**Checkpoint**: ✅ Foundation ready - MCP connection infrastructure complete, user story implementation can now begin
 
 ---
 
@@ -58,9 +58,9 @@ description: "Task breakdown for Agent-MCP Integration feature"
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T009 [P] [US1] Create integration test for MCP connection startup in tests/integration/test_mcp_connection.py (test successful connection, tool discovery count, connection state)
-- [ ] T010 [P] [US1] Create integration test for MCP connection failure in tests/integration/test_mcp_connection.py (test degraded mode, app.state.mcp_server is None, logs error)
-- [ ] T011 [P] [US1] Create integration test for health check endpoint in tests/integration/test_mcp_connection.py (test healthy status, degraded status with MCP down)
+- [X] T009 [P] [US1] Create integration test for MCP connection startup in tests/integration/test_mcp_connection.py (test successful connection, tool discovery count, connection state)
+- [X] T010 [P] [US1] Create integration test for MCP connection failure in tests/integration/test_mcp_connection.py (test degraded mode, app.state.mcp_server is None, logs error)
+- [X] T011 [P] [US1] Create integration test for health check endpoint in tests/integration/test_mcp_connection.py (test healthy status, degraded status with MCP down)
 
 ### Implementation for User Story 1
 
