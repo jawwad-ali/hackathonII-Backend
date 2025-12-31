@@ -1,0 +1,250 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Tool Registry Schema",
+  "description": "Collection of MCP tools discovered and registered with the TodoAgent",
+  "type": "object",
+  "properties": {
+    "tools": {
+      "type": "array",
+      "description": "List of registered tools",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": {
+        "$ref": "#/definitions/Tool"
+      }
+    },
+    "total_count": {
+      "type": "integer",
+      "description": "Total number of registered tools",
+      "const": 5
+    },
+    "last_updated": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the tool registry was last updated"
+    }
+  },
+  "required": ["tools", "total_count", "last_updated"],
+  "definitions": {
+    "Tool": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "enum": ["create_todo", "list_todos", "update_todo", "search_todos", "delete_todo"],
+          "description": "Unique tool identifier"
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable tool description"
+        },
+        "input_schema": {
+          "type": "object",
+          "description": "JSON Schema defining input parameters",
+          "properties": {
+            "type": {"const": "object"},
+            "properties": {"type": "object"},
+            "required": {
+              "type": "array",
+              "items": {"type": "string"}
+            }
+          },
+          "required": ["type", "properties"]
+        },
+        "tags": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Categorization tags"
+        },
+        "metadata": {
+          "type": "object",
+          "description": "Additional tool metadata",
+          "properties": {
+            "version": {"type": "string"},
+            "author": {"type": "string"},
+            "readonly": {"type": "boolean"},
+            "destructive": {"type": "boolean"}
+          }
+        }
+      },
+      "required": ["name", "description", "input_schema"]
+    }
+  },
+  "examples": [
+    {
+      "tools": [
+        {
+          "name": "create_todo",
+          "description": "Creates a new todo item with title, optional description, priority, tags, and due date",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string",
+                "description": "Todo title"
+              },
+              "description": {
+                "type": "string",
+                "description": "Optional description"
+              },
+              "priority": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 5,
+                "description": "Priority level (1=lowest, 5=highest)"
+              },
+              "tags": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "List of tags"
+              },
+              "due_date": {
+                "type": "string",
+                "format": "date",
+                "description": "Due date in YYYY-MM-DD format"
+              }
+            },
+            "required": ["title"]
+          },
+          "tags": ["crud", "create"],
+          "metadata": {
+            "version": "1.0",
+            "readonly": false,
+            "destructive": false
+          }
+        },
+        {
+          "name": "list_todos",
+          "description": "Lists todos filtered by status, priority, tags, or due date",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": ["active", "completed", "archived"],
+                "description": "Filter by status"
+              },
+              "priority": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 5,
+                "description": "Filter by priority"
+              },
+              "tags": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Filter by tags"
+              },
+              "due_date_before": {
+                "type": "string",
+                "format": "date",
+                "description": "Due before this date"
+              },
+              "due_date_after": {
+                "type": "string",
+                "format": "date",
+                "description": "Due after this date"
+              }
+            }
+          },
+          "tags": ["crud", "read"],
+          "metadata": {
+            "version": "1.0",
+            "readonly": true,
+            "destructive": false
+          }
+        },
+        {
+          "name": "update_todo",
+          "description": "Updates an existing todo's fields by ID",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "todo_id": {
+                "type": "integer",
+                "description": "Todo ID to update"
+              },
+              "title": {"type": "string"},
+              "description": {"type": "string"},
+              "status": {
+                "type": "string",
+                "enum": ["active", "completed", "archived"]
+              },
+              "priority": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 5
+              },
+              "tags": {
+                "type": "array",
+                "items": {"type": "string"}
+              },
+              "due_date": {
+                "type": "string",
+                "format": "date"
+              }
+            },
+            "required": ["todo_id"]
+          },
+          "tags": ["crud", "update"],
+          "metadata": {
+            "version": "1.0",
+            "readonly": false,
+            "destructive": false
+          }
+        },
+        {
+          "name": "search_todos",
+          "description": "Searches todos by keyword in title or description",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "query": {
+                "type": "string",
+                "description": "Search keyword"
+              },
+              "status": {
+                "type": "string",
+                "enum": ["active", "completed", "archived"]
+              },
+              "priority": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 5
+              }
+            },
+            "required": ["query"]
+          },
+          "tags": ["crud", "search"],
+          "metadata": {
+            "version": "1.0",
+            "readonly": true,
+            "destructive": false
+          }
+        },
+        {
+          "name": "delete_todo",
+          "description": "Deletes a todo by ID",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "todo_id": {
+                "type": "integer",
+                "description": "Todo ID to delete"
+              }
+            },
+            "required": ["todo_id"]
+          },
+          "tags": ["crud", "delete"],
+          "metadata": {
+            "version": "1.0",
+            "readonly": false,
+            "destructive": true
+          }
+        }
+      ],
+      "total_count": 5,
+      "last_updated": "2025-12-31T10:30:00Z"
+    }
+  ]
+}
