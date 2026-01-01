@@ -4,8 +4,7 @@ Defines the OpenAI Agents SDK agent for natural language todo management
 
 Includes circuit breaker and retry logic for Gemini API resilience.
 """
-
-from agents import Agent, set_default_openai_client
+from agents import Agent, set_default_openai_client, OpenAIChatCompletionsModel, AsyncOpenAI
 from agents.mcp import MCPServerStdio
 from typing import List, Any, Dict, Optional
 from src.config import get_gemini_client, get_gemini_circuit_breaker
@@ -16,10 +15,17 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-# Configure the OpenAI Agents SDK to use Gemini 2.5 Flash via AsyncOpenAI
+# Configure the OpenAI Agents SDK to use Gemini 2.0 Flash via AsyncOpenAI
 # This sets the default client for all agents created in this module
 gemini_client = get_gemini_client()
 set_default_openai_client(gemini_client)
+
+# Create OpenAI Chat Completions Model for Gemini 2.0 Flash
+# Reference: https://ai.google.dev/gemini-api/docs/openai
+gemini_model = OpenAIChatCompletionsModel(
+    model="gemini-2.5-flash",
+    openai_client=gemini_client,
+)
 
 
 # System instructions for the TodoAgent
@@ -310,7 +316,7 @@ Key behaviors:
 """
 
 
-def create_todo_agent(mcp_servers: Optional[List[MCPServerStdio]] = None) -> Agent:
+async def create_todo_agent(mcp_servers: Optional[List[MCPServerStdio]] = None) -> Agent:
     """
     Create and configure the TodoAgent using OpenAI Agents SDK.
 
@@ -320,14 +326,13 @@ def create_todo_agent(mcp_servers: Optional[List[MCPServerStdio]] = None) -> Age
     - Conversational response generation
 
     MCP tools are registered dynamically when mcp_servers parameter is provided.
-    The OpenAI Agents SDK automatically discovers and registers tools from the
-    specified MCP servers at agent initialization time.
+    Due to Gemini API limitations with MCP protocol, tools are manually discovered
+    and registered as Function tools.
 
     Args:
         mcp_servers: Optional list of MCPServerStdio instances for tool discovery.
                     Each instance represents a connected MCP server with available tools.
-                    The Agent constructor automatically discovers and registers all tools
-                    exposed by these servers via the MCP protocol.
+                    Tools are manually listed and registered with the agent.
                     If None or empty list, agent is created without MCP tools (for testing).
 
     Returns:
@@ -338,29 +343,60 @@ def create_todo_agent(mcp_servers: Optional[List[MCPServerStdio]] = None) -> Age
         >>> from src.mcp.client import initialize_mcp_connection
         >>> mcp_server = await initialize_mcp_connection()
         >>> if mcp_server:
-        ...     agent = create_todo_agent(mcp_servers=[mcp_server])
+        ...     agent = await create_todo_agent(mcp_servers=[mcp_server])
         >>>
         >>> # Create agent without tools (for testing)
-        >>> agent = create_todo_agent()
+        >>> agent = await create_todo_agent()
     """
+    # Manually discover and register MCP tools
+    # This is needed because Gemini API bridge doesn't support automatic MCP tool discovery
+    discovered_tools = []
+
+    if mcp_servers:
+        for server in mcp_servers:
+            try:
+                # List all available tools from the MCP server
+                tools_list = await server.list_tools()
+                logger.info(
+                    f"Listed {len(tools_list.tools) if tools_list and hasattr(tools_list, 'tools') else 0} tools from MCP server",
+                    extra={
+                        "mcp_server": server.name if hasattr(server, 'name') else "unknown",
+                        "tools_count": len(tools_list.tools) if tools_list and hasattr(tools_list, 'tools') else 0
+                    }
+                )
+
+                if tools_list and hasattr(tools_list, 'tools'):
+                    discovered_tools.extend(tools_list.tools)
+
+            except Exception as e:
+                logger.error(
+                    f"Failed to list tools from MCP server: {e}",
+                    extra={"error": str(e)},
+                    exc_info=True
+                )
+
+    # Create agent with both mcp_servers and discovered tools
+    # The mcp_servers parameter enables tool execution via MCP protocol
+    # The tools parameter makes them visible to the LLM (Gemini)
     agent = Agent(
         name="TodoAgent",
+        model=gemini_model,
         instructions=TODO_AGENT_INSTRUCTIONS,
-        mcp_servers=mcp_servers or [],  # Pass MCPServerStdio instances to Agent
+        mcp_servers=mcp_servers or [],  # For tool execution
+        tools=discovered_tools,  # For LLM awareness
     )
 
     # T015: Log tool discovery with all discovered tool names
-    # The Agent object has a 'tools' attribute that contains all registered tools
-    # after MCP servers are connected during Agent initialization
+    # Tools are manually discovered from MCP servers
     discovered_tool_names = []
 
-    if hasattr(agent, 'tools') and agent.tools:
-        # Extract tool names from the agent's tools
-        discovered_tool_names = [tool.name if hasattr(tool, 'name') else str(tool) for tool in agent.tools]
+    if discovered_tools:
+        # Extract tool names from the discovered tools
+        discovered_tool_names = [tool.name if hasattr(tool, 'name') else str(tool) for tool in discovered_tools]
 
         logger.info(
             f"TodoAgent created with {len(mcp_servers) if mcp_servers else 0} MCP server(s) - "
-            f"Discovered {len(discovered_tool_names)} tools",
+            f"Manually discovered {len(discovered_tool_names)} tools",
             extra={
                 "mcp_servers_count": len(mcp_servers) if mcp_servers else 0,
                 "discovered_tools_count": len(discovered_tool_names),

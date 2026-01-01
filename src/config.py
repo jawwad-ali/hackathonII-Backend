@@ -9,8 +9,9 @@ from pydantic_settings import BaseSettings
 from pydantic import Field, field_validator
 from typing import List
 import os
-from openai import AsyncOpenAI
+# from openai import AsyncOpenAI
 from datetime import timedelta
+
 
 # Import resilience components
 from src.resilience.circuit_breaker import (
@@ -19,7 +20,7 @@ from src.resilience.circuit_breaker import (
     CircuitBreakerError
 )
 from src.resilience.retry import gemini_retry
-
+from agents import AsyncOpenAI, OpenAIChatCompletionsModel, RunConfig
 
 class Settings(BaseSettings):
     """
@@ -228,7 +229,6 @@ def get_gemini_client() -> AsyncOpenAI:
     return AsyncOpenAI(
         api_key=config["api_key"],
         base_url=config["base_url"],
-        timeout=settings.REQUEST_TIMEOUT,  # 30 seconds default
     )
 
 

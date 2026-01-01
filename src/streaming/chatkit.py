@@ -57,6 +57,9 @@ def format_sse_event(event_type: str, data: Dict[str, Any]) -> str:
         >>> format_sse_event("thinking", {"content": "Processing request..."})
         'event: thinking\\ndata: {"content": "Processing request..."}\\n\\n'
     """
+    # EventType/Enum members stringify to "EventType.X" by default; SSE needs the raw value.
+    if isinstance(event_type, Enum):
+        event_type = str(getattr(event_type, "value", event_type))
     json_data = json.dumps(data, ensure_ascii=False)
     return f"event: {event_type}\ndata: {json_data}\n\n"
 
@@ -217,69 +220,169 @@ def map_agent_event_to_chatkit(
         >>> print(sse)
         'event: response_delta\\ndata: {"delta": "Hello", "accumulated": "Hello"}\\n\\n'
     """
-    event_type = type(event).__name__
+    # agents>=0.6 stream events provide a stable `.type` discriminator.
+    event_kind = getattr(event, "type", None)
 
-    # Handle text delta events (agent text responses)
-    if hasattr(event, 'delta') and event.delta:
-        return stream_builder.add_response_delta(event.delta)
+    # ---- Raw model streaming events (text deltas, lifecycle, etc.) ----
+    if event_kind == "raw_response_event":
+        raw = getattr(event, "data", None)
+        if raw is None:
+            return None
 
-    # Handle tool call initiation events
-    elif hasattr(event, 'tool_name') and not hasattr(event, 'result'):
-        tool_name = event.tool_name
-        tool_args = getattr(event, 'arguments', {})
-        return stream_builder.add_tool_call(
-            tool_name=tool_name,
-            arguments=tool_args,
-            status=ToolStatus.IN_PROGRESS
-        )
+        # Text deltas (preferred).
+        delta = getattr(raw, "delta", None)
+        if isinstance(delta, str) and delta:
+            return stream_builder.add_response_delta(delta)
 
-    # Handle tool call completion events
-    elif hasattr(event, 'tool_name') and hasattr(event, 'result'):
-        tool_name = event.tool_name
-        tool_args = getattr(event, 'arguments', {})
-        return stream_builder.add_tool_call(
-            tool_name=tool_name,
-            arguments=tool_args,
-            status=ToolStatus.COMPLETED
-        )
+        # Some providers emit only "done" events with a full text payload.
+        text = getattr(raw, "text", None)
+        if isinstance(text, str) and text and not stream_builder.accumulated_text:
+            return stream_builder.add_response_delta(text)
 
-    # Handle agent thinking/reasoning events
-    elif event_type in ["AgentUpdatedStreamEvent", "AgentThinkingEvent"]:
-        # Try multiple attribute names for content
-        content = None
-        for attr in ['content', 'reasoning', 'thought', 'message']:
-            if hasattr(event, attr):
-                content = getattr(event, attr)
-                if content:
-                    break
+        # Surface raw errors as ChatKit error events (best-effort).
+        raw_type = getattr(raw, "type", None)
+        if isinstance(raw_type, str) and "error" in raw_type.lower():
+            message = (
+                getattr(raw, "message", None)
+                or getattr(raw, "error", None)
+                or str(raw)
+            )
+            return stream_builder.add_error(
+                error_type=ErrorType.GEMINI_API_ERROR,
+                message=str(message),
+                recoverable=True,
+            )
 
-        if content:
-            return stream_builder.add_thinking(str(content))
+        return None
 
-    # Handle explicit error events
-    elif event_type == "ErrorEvent" or hasattr(event, 'error'):
-        error_msg = getattr(event, 'error', str(event))
-        error_type_str = getattr(event, 'error_type', 'GEMINI_API_ERROR')
+    # ---- Structured run item events (tool calls, tool outputs, messages, etc.) ----
+    if event_kind == "run_item_stream_event":
+        name = getattr(event, "name", None)
+        item = getattr(event, "item", None)
 
-        # Map error type string to ErrorType enum
-        try:
-            error_type = ErrorType[error_type_str.upper()]
-        except (KeyError, AttributeError):
-            error_type = ErrorType.GEMINI_API_ERROR
+        # Tool call created.
+        if name == "tool_called" and item is not None and hasattr(item, "raw_item"):
+            raw_item = getattr(item, "raw_item", None)
 
+            tool_name = None
+            call_id = None
+            raw_args: Any = None
+
+            # Responses API function tool call
+            tool_name = getattr(raw_item, "name", None)
+            call_id = getattr(raw_item, "call_id", None)
+            raw_args = getattr(raw_item, "arguments", None)
+
+            # Alternate shapes (dicts, chat-completions tool calls, etc.)
+            if tool_name is None and isinstance(raw_item, dict):
+                tool_name = raw_item.get("name") or raw_item.get("tool_name")
+                call_id = raw_item.get("call_id") or raw_item.get("callId") or raw_item.get("id")
+                raw_args = raw_item.get("arguments") or raw_item.get("args")
+            elif tool_name is None and hasattr(raw_item, "function"):
+                func = getattr(raw_item, "function", None)
+                tool_name = getattr(func, "name", None)
+                raw_args = getattr(func, "arguments", raw_args)
+
+            tool_args: Dict[str, Any] = {}
+            if isinstance(raw_args, str):
+                try:
+                    tool_args = json.loads(raw_args) if raw_args.strip() else {}
+                except json.JSONDecodeError:
+                    tool_args = {"raw": raw_args}
+            elif isinstance(raw_args, dict):
+                tool_args = raw_args
+
+            if isinstance(call_id, str) and call_id and tool_name:
+                stream_builder.track_tool_call(call_id=call_id, tool_name=str(tool_name), arguments=tool_args)
+
+            if tool_name:
+                return stream_builder.add_tool_call(
+                    tool_name=str(tool_name),
+                    arguments=tool_args,
+                    status=ToolStatus.IN_PROGRESS,
+                )
+
+            return None
+
+        # Tool output created (best-effort correlation via call_id).
+        if name == "tool_output" and item is not None and hasattr(item, "raw_item"):
+            raw_item = getattr(item, "raw_item", None)
+
+            call_id = None
+            if isinstance(raw_item, dict):
+                call_id = raw_item.get("call_id") or raw_item.get("callId") or raw_item.get("id")
+            else:
+                call_id = getattr(raw_item, "call_id", None) or getattr(raw_item, "callId", None)
+
+            if isinstance(call_id, str) and call_id:
+                tracked = stream_builder.get_tracked_tool_call(call_id)
+                if tracked is not None:
+                    tool_name, tool_args = tracked
+                    return stream_builder.add_tool_call(
+                        tool_name=tool_name,
+                        arguments=tool_args,
+                        status=ToolStatus.COMPLETED,
+                    )
+
+            return None
+
+        # Message output created (fallback when we don't receive raw text deltas).
+        if name == "message_output_created" and item is not None and hasattr(item, "raw_item"):
+            if stream_builder.accumulated_text:
+                return None
+
+            message = getattr(item, "raw_item", None)
+            contents = getattr(message, "content", None)
+            if isinstance(contents, list):
+                text_parts: list[str] = []
+                for part in contents:
+                    part_text = getattr(part, "text", None)
+                    if isinstance(part_text, str) and part_text:
+                        text_parts.append(part_text)
+                    refusal = getattr(part, "refusal", None)
+                    if isinstance(refusal, str) and refusal:
+                        text_parts.append(refusal)
+                text = "".join(text_parts).strip()
+                if text:
+                    return stream_builder.add_response_delta(text)
+
+            return None
+
+        # Reasoning summary item created.
+        if name == "reasoning_item_created" and item is not None and hasattr(item, "raw_item"):
+            reasoning = getattr(item, "raw_item", None)
+            summaries = getattr(reasoning, "summary", None)
+            if isinstance(summaries, list) and summaries:
+                summary_texts: list[str] = []
+                for summary_part in summaries:
+                    text = getattr(summary_part, "text", None)
+                    if isinstance(text, str) and text:
+                        summary_texts.append(text)
+                summary = " ".join(summary_texts).strip()
+                if summary:
+                    return stream_builder.add_thinking(summary)
+
+            return None
+
+        return None
+
+    # ---- Backwards-compatible fallbacks for older / custom event shapes ----
+    if hasattr(event, "delta") and getattr(event, "delta"):
+        return stream_builder.add_response_delta(str(getattr(event, "delta")))
+
+    if hasattr(event, "tool_name"):
+        tool_name = getattr(event, "tool_name")
+        tool_args = getattr(event, "arguments", {}) or {}
+        status = ToolStatus.COMPLETED if hasattr(event, "result") else ToolStatus.IN_PROGRESS
+        return stream_builder.add_tool_call(tool_name=str(tool_name), arguments=tool_args, status=status)
+
+    if hasattr(event, "error"):
         return stream_builder.add_error(
-            error_type=error_type,
-            message=str(error_msg),
-            recoverable=getattr(event, 'recoverable', True)
+            error_type=ErrorType.GEMINI_API_ERROR,
+            message=str(getattr(event, "error")),
+            recoverable=getattr(event, "recoverable", True),
         )
 
-    # Handle raw response events (fallback for text content)
-    elif event_type == "raw_response_event" and hasattr(event, 'content'):
-        content = event.content
-        if isinstance(content, str) and content.strip():
-            return stream_builder.add_response_delta(content)
-
-    # Skip other event types (debug, metadata, etc.)
     return None
 
 
@@ -294,6 +397,16 @@ class StreamBuilder:
         """Initialize the stream builder."""
         self.accumulated_text: str = ""
         self.tools_called: List[str] = []
+        self._tool_calls_by_id: Dict[str, tuple[str, Dict[str, Any]]] = {}
+
+    def track_tool_call(self, call_id: str, tool_name: str, arguments: Dict[str, Any]) -> None:
+        """Track tool call metadata so later tool_output events can be correlated."""
+        if call_id:
+            self._tool_calls_by_id[call_id] = (tool_name, arguments)
+
+    def get_tracked_tool_call(self, call_id: str) -> Optional[tuple[str, Dict[str, Any]]]:
+        """Return (tool_name, arguments) for a previously tracked call_id, if any."""
+        return self._tool_calls_by_id.get(call_id)
 
     def add_thinking(self, content: str) -> str:
         """
@@ -382,3 +495,4 @@ class StreamBuilder:
         """Reset the builder state for a new stream."""
         self.accumulated_text = ""
         self.tools_called = []
+        self._tool_calls_by_id = {}

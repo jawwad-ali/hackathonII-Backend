@@ -27,12 +27,12 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 
-def initialize_agent_with_mcp(mcp_server: Optional[MCPServerStdio]):
+async def initialize_agent_with_mcp(mcp_server: Optional[MCPServerStdio]):
     """
     Initialize TodoAgent with MCP server connection from app.state.
 
     This function creates the TodoAgent and passes the MCP server instance
-    for automatic tool discovery via the OpenAI Agents SDK.
+    for manual tool discovery and registration.
 
     T013: Agent initialization function that uses app.state.mcp_server
 
@@ -48,7 +48,7 @@ def initialize_agent_with_mcp(mcp_server: Optional[MCPServerStdio]):
         >>> # In endpoint handler
         >>> from fastapi import Request
         >>> mcp_server = request.app.state.mcp_server
-        >>> agent = initialize_agent_with_mcp(mcp_server)
+        >>> agent = await initialize_agent_with_mcp(mcp_server)
         >>> # Agent now has access to all discovered MCP tools
     """
     # Build list of MCP servers for agent initialization
@@ -77,7 +77,8 @@ def initialize_agent_with_mcp(mcp_server: Optional[MCPServerStdio]):
 
     # Create TodoAgent with MCP servers (or empty list for degraded mode)
     # The create_todo_agent function handles None/empty list gracefully
-    agent = create_todo_agent(mcp_servers=mcp_servers if mcp_servers else None)
+    # Now async to support manual tool discovery
+    agent = await create_todo_agent(mcp_servers=mcp_servers if mcp_servers else None)
 
     return agent
 
@@ -366,14 +367,16 @@ async def chat_stream_generator(
 
         # T013: Initialize TodoAgent with MCP server from app.state
         # The initialize_agent_with_mcp function handles both normal and degraded mode
-        agent = initialize_agent_with_mcp(mcp_server)
+        # Now async to support manual tool discovery
+        agent = await initialize_agent_with_mcp(mcp_server)
 
         logger.info(
             f"TodoAgent initialized",
             extra={
                 "request_id": request_id,
                 "agent_name": agent.name,
-                "has_mcp_tools": True
+                "has_mcp_tools": True,
+                "tools_count": len(agent.tools) if hasattr(agent, 'tools') and agent.tools else 0
             }
         )
 
@@ -396,8 +399,8 @@ async def chat_stream_generator(
         # T013: MCP tools are already registered with agent via mcp_servers parameter
         # No separate context needed - the Agent handles MCP communication
         result = Runner.run_streamed(
-            agent=agent,
-            input=message
+            agent,
+            message
         )
 
         # T031: Include context metadata in all logging
@@ -883,9 +886,9 @@ async def chat_stream_generator(
             if sse_event:
                 yield sse_event
 
-        # Get final result
-        final_result = result.result()
-
+        # Get final output from the streamed result
+        # Note: final_output is a property, not a method
+        final_result = result.final_output
         logger.info(
             f"Agent execution completed",
             extra={
@@ -898,7 +901,19 @@ async def chat_stream_generator(
         # The stream_builder.add_done() automatically includes tools_called list
         # For LIST operations, this will be ["list_todos"]
         # For CREATE operations, this will be ["create_todo"]
-        final_output = stream_builder.accumulated_text or "Request processed successfully."
+        # Prefer streamed accumulated text, but fall back to the agent's final_output if no deltas were emitted.
+        final_output = stream_builder.accumulated_text
+        if not final_output:
+            if isinstance(final_result, str) and final_result.strip():
+                final_output = final_result.strip()
+            elif final_result is not None:
+                final_output = str(final_result)
+            else:
+                final_output = "Request processed successfully."
+
+            # Ensure clients that rely on RESPONSE_DELTA still receive the final text.
+            if final_output:
+                yield stream_builder.add_response_delta(final_output)
         yield stream_builder.add_done(
             final_output=final_output,
             success=True

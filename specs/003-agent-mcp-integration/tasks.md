@@ -161,12 +161,12 @@ description: "Task breakdown for Agent-MCP Integration feature"
 
 **Purpose**: Final validation and documentation updates
 
-- [ ] T037 [P] Use MCP Inspector to verify FastMCP server JSON-RPC schema (command: uvx fastmcp inspect src/mcp_server/server.py)
-- [ ] T038 [P] Run full integration test suite with all user stories (uv run pytest tests/integration/)
-- [ ] T039 [P] Verify end-to-end chat request flow (user message → agent → MCP tool → database → SSE response)
-- [ ] T040 Update specs/003-agent-mcp-integration/quickstart.md with actual setup commands and usage examples
-- [ ] T041 [P] Verify all environment variables documented in .env.example and quickstart.md
-- [ ] T042 Run coverage report and ensure >80% for integration code (uv run pytest --cov=src --cov-report=term-missing)
+- [X] T037 [P] Use MCP Inspector to verify FastMCP server JSON-RPC schema (command: uvx fastmcp inspect src/mcp_server/server.py)
+- [X] T038 [P] Run full integration test suite with all user stories (uv run pytest tests/integration/)
+- [X] T039 [P] Verify end-to-end chat request flow (user message → agent → MCP tool → database → SSE response)
+- [X] T040 Update specs/003-agent-mcp-integration/quickstart.md with actual setup commands and usage examples
+- [X] T041 [P] Verify all environment variables documented in .env.example and quickstart.md
+- [X] T042 Run coverage report and ensure >80% for integration code (uv run pytest --cov=src --cov-report=term-missing)
 
 ---
 
