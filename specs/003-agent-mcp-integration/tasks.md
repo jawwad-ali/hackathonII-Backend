@@ -148,10 +148,10 @@ description: "Task breakdown for Agent-MCP Integration feature"
 
 ### Implementation for User Story 5
 
-- [ ] T033 [P] [US5] Add MCP_TRANSPORT_TYPE environment variable to src/config.py (default="stdio", allowed values: stdio, sse)
-- [ ] T034 [P] [US5] Add conditional transport initialization in src/mcp/client.py (if stdio use MCPServerStdio, if sse document placeholder for future MCPServerSse)
-- [ ] T035 [US5] Document SSE transport configuration in specs/003-agent-mcp-integration/quickstart.md (environment variables, localhost-only binding requirement)
-- [ ] T036 [US5] Add localhost-only validation comment in src/mcp/client.py for future SSE transport (must bind 127.0.0.1, not 0.0.0.0)
+- [X] T033 [P] [US5] Add MCP_TRANSPORT_TYPE environment variable to src/config.py (default="stdio", allowed values: stdio, sse)
+- [X] T034 [P] [US5] Add conditional transport initialization in src/mcp/client.py (if stdio use MCPServerStdio, if sse document placeholder for future MCPServerSse)
+- [X] T035 [US5] Document SSE transport configuration in specs/003-agent-mcp-integration/quickstart.md (environment variables, localhost-only binding requirement)
+- [X] T036 [US5] Add localhost-only validation comment in src/mcp/client.py for future SSE transport (must bind 127.0.0.1, not 0.0.0.0)
 
 **Checkpoint**: User Story 5 complete - SSE transport prepared for future production deployment
 

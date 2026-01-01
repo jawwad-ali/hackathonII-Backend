@@ -13,14 +13,14 @@ from typing import Optional
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session
 
-from ..database import engine
-from ..models import Todo, TodoStatus
-from ..schemas import CreateTodoInput
-from ..server import mcp
+from src.mcp_server.database import engine
+from src.mcp_server.models import Todo, TodoStatus
+from src.mcp_server.schemas import CreateTodoInput
+from src.mcp_server.server import mcp
 
 
-def create_todo(title: str, description: Optional[str] = None, _test_session: Optional[Session] = None) -> str:
-    """Creates a new todo item in the database.
+def _create_todo_impl(title: str, description: Optional[str] = None, _test_session: Optional[Session] = None) -> str:
+    """Internal implementation of create_todo with test session support.
 
     This tool creates a new todo with the provided title and optional description.
     The todo is automatically assigned an active status and timestamps are
@@ -128,9 +128,9 @@ def create_todo(title: str, description: Optional[str] = None, _test_session: Op
                 raise Exception(f"Database error while creating todo: {str(e)}")
 
 
-# Create MCP tool wrapper that excludes test parameter
+# MCP tool wrapper that calls internal implementation without test parameter
 @mcp.tool
-def create_todo_mcp(title: str, description: Optional[str] = None) -> str:
+def create_todo(title: str, description: Optional[str] = None) -> str:
     """Creates a new todo item in the database.
 
     Args:
@@ -140,4 +140,4 @@ def create_todo_mcp(title: str, description: Optional[str] = None) -> str:
     Returns:
         str: Success message with created todo details
     """
-    return create_todo(title=title, description=description, _test_session=None)
+    return _create_todo_impl(title=title, description=description, _test_session=None)

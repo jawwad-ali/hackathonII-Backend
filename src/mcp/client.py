@@ -49,36 +49,84 @@ async def _initialize_mcp_connection_with_retry() -> MCPServerStdio:
     - Exponential backoff: 1s → 2s → 4s (with jitter)
     - Timeout: 5 seconds per attempt (per FR-017)
 
+    Supports multiple transport types via MCP_TRANSPORT_TYPE environment variable:
+    - "stdio": Local subprocess with stdin/stdout (default, recommended for development)
+    - "sse": HTTP with Server-Sent Events (placeholder for future production deployment)
+
     Returns:
-        MCPServerStdio: Initialized MCP server connection with stdio transport
+        MCPServerStdio: Initialized MCP server connection with configured transport
 
     Raises:
         ConnectionError: If MCP server cannot be reached (after retries)
         TimeoutError: If MCP initialization exceeds timeout (after retries)
-        ValueError: If configuration is invalid
+        ValueError: If configuration is invalid or transport type unsupported
     """
-    logger.info("Initializing MCP server connection via stdio transport")
+    transport_type = settings.MCP_TRANSPORT_TYPE
+    logger.info(f"Initializing MCP server connection via {transport_type} transport")
 
     try:
-        # Create MCPServerStdio with subprocess parameters from settings
-        # This spawns the FastMCP server as a subprocess with stdin/stdout communication
         async with asyncio.timeout(settings.MCP_SERVER_TIMEOUT):
-            mcp_server = MCPServerStdio(
-                name="TodoDatabaseServer",
-                params={
-                    "command": settings.MCP_SERVER_COMMAND,
-                    "args": settings.MCP_SERVER_ARGS
-                }
-            )
+            # Conditional transport initialization based on MCP_TRANSPORT_TYPE
+            if transport_type == "stdio":
+                # stdio transport: Local subprocess with stdin/stdout communication
+                # No network binding - inherently localhost-only and secure
+                mcp_server = MCPServerStdio(
+                    name="TodoDatabaseServer",
+                    params={
+                        "command": settings.MCP_SERVER_COMMAND,
+                        "args": settings.MCP_SERVER_ARGS
+                    },
+                    # OpenAI Agents SDK defaults this to 5s; make it configurable so
+                    # slower cold starts (imports, venv/uv wrappers, etc.) don't
+                    # fail MCP initialization/tool discovery.
+                    client_session_timeout_seconds=float(settings.MCP_SERVER_TIMEOUT),
+                )
 
-            # Initialize the connection (spawns subprocess)
-            await mcp_server.__aenter__()
+                # Initialize the connection (spawns subprocess)
+                await mcp_server.__aenter__()
 
-            logger.info(
-                f"MCP server initialized successfully (timeout: {settings.MCP_SERVER_TIMEOUT}s)"
-            )
+                logger.info(
+                    f"MCP server initialized successfully via stdio (timeout: {settings.MCP_SERVER_TIMEOUT}s)"
+                )
 
-            return mcp_server
+                return mcp_server
+
+            elif transport_type == "sse":
+                # SSE transport: HTTP with Server-Sent Events (future implementation)
+                #
+                # SECURITY REQUIREMENT: When implementing SSE transport, the MCP server
+                # MUST bind to localhost only (127.0.0.1), NOT 0.0.0.0 or public IPs.
+                # This prevents unauthorized network access to database operations.
+                #
+                # Example implementation (not yet available in OpenAI Agents SDK):
+                # ```python
+                # from agents.mcp import MCPServerSse  # Not yet implemented
+                #
+                # mcp_server = MCPServerSse(
+                #     name="TodoDatabaseServer",
+                #     params={
+                #         "url": "http://127.0.0.1:8001",  # MUST be localhost only
+                #         "timeout": settings.MCP_SERVER_TIMEOUT
+                #     }
+                # )
+                # await mcp_server.__aenter__()
+                # ```
+                #
+                # TODO: Implement SSE transport when MCPServerSse is available
+                # TODO: Add localhost-only binding validation (127.0.0.1, not 0.0.0.0)
+                # TODO: Add TLS/SSL configuration for production deployment
+                # TODO: Update .env.example with SSE configuration variables
+                raise NotImplementedError(
+                    "SSE transport is not yet implemented. "
+                    "Please use MCP_TRANSPORT_TYPE=stdio or wait for MCPServerSse support in OpenAI Agents SDK."
+                )
+
+            else:
+                # Invalid transport type (should be caught by config validation)
+                raise ValueError(
+                    f"Unsupported MCP transport type: '{transport_type}'. "
+                    f"Valid options: 'stdio', 'sse'"
+                )
 
     except asyncio.TimeoutError as e:
         # Timeout handling - convert to TimeoutError for retry logic
@@ -93,6 +141,11 @@ async def _initialize_mcp_connection_with_retry() -> MCPServerStdio:
         # These errors trigger retry logic
         logger.warning(f"MCP server initialization failed (will retry): {e}")
         raise
+
+    except NotImplementedError as e:
+        # SSE transport not implemented - don't retry
+        logger.error(f"Transport type not supported: {e}")
+        raise ValueError(str(e)) from e
 
     except Exception as e:
         # Other errors (config errors, etc.) don't trigger retry

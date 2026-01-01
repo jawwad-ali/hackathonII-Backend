@@ -97,8 +97,9 @@ GEMINI_MODEL=gemini-2.5-flash
 
 # MCP Server
 MCP_SERVER_COMMAND=uvx
-MCP_SERVER_ARGS=["fastmcp", "run", "src/mcp_server/server.py"]
+MCP_SERVER_ARGS=fastmcp,run,src/mcp_server/server.py
 MCP_SERVER_TIMEOUT=5
+MCP_TRANSPORT_TYPE=stdio  # Transport type: stdio (default) or sse (future)
 
 # Application
 APP_HOST=0.0.0.0
@@ -530,8 +531,8 @@ TOTAL                               150     10    93%
 
 ### Production Deployment
 
-1. Switch to SSE transport for networked MCP server:
-   - Update `.env` to use SSE configuration
+1. **Switch to SSE transport** for networked MCP server (optional):
+   - See "SSE Transport Configuration" section below for detailed setup
    - Deploy MCP server as separate service
 2. Enable production logging:
    - Configure log aggregation (e.g., Loki, CloudWatch)
@@ -549,6 +550,227 @@ TOTAL                               150     10    93%
 - Implement conversation history persistence
 - Add rate limiting per user
 - Enable multi-tenant todo isolation
+
+---
+
+## SSE Transport Configuration (Future Production Deployment)
+
+**Status**: ⚠️ **Not Yet Implemented** - Placeholder for future SSE transport support
+
+**Current Default**: stdio transport (local subprocess, recommended for development)
+
+### Overview
+
+The system supports two MCP transport types:
+
+| Transport | Description | Use Case | Network Binding |
+|-----------|-------------|----------|-----------------|
+| **stdio** | Local subprocess with stdin/stdout | Development, single-server deployment | None (inherently localhost-only) |
+| **sse** | HTTP with Server-Sent Events | Production, multi-server scaling | **MUST be localhost only (127.0.0.1)** |
+
+### When to Use SSE Transport
+
+Use SSE transport when:
+- Deploying multiple FastAPI instances that need to share a single MCP server
+- MCP server and FastAPI orchestrator are on separate machines
+- Scaling horizontally with a load balancer
+
+**Do NOT use SSE if**:
+- Running single FastAPI instance (use stdio instead)
+- MCP server and orchestrator are on the same machine (use stdio)
+
+### SSE Configuration (Not Yet Available)
+
+**⚠️ Important**: SSE transport is currently **not implemented**. The following configuration is prepared for future use when OpenAI Agents SDK provides `MCPServerSse` support.
+
+#### Environment Variables
+
+Add to `.env`:
+
+```env
+# MCP Transport Configuration
+MCP_TRANSPORT_TYPE=sse  # Change from "stdio" to "sse"
+
+# SSE Transport Settings (when implemented)
+MCP_SSE_URL=http://127.0.0.1:8001  # ⚠️ MUST be localhost only (127.0.0.1)
+MCP_SSE_TIMEOUT=5                  # Same as stdio timeout
+MCP_SSE_TLS_ENABLED=false          # Set true for production with TLS
+MCP_SSE_TLS_CERT_PATH=/path/to/cert.pem  # If TLS enabled
+MCP_SSE_TLS_KEY_PATH=/path/to/key.pem    # If TLS enabled
+```
+
+#### Security Requirements
+
+🔒 **CRITICAL SECURITY REQUIREMENT**:
+
+When implementing SSE transport, the MCP server **MUST bind to localhost only**:
+
+- ✅ **Correct**: `127.0.0.1:8001` (localhost IPv4)
+- ✅ **Correct**: `localhost:8001` (resolves to 127.0.0.1)
+- ❌ **WRONG**: `0.0.0.0:8001` (binds to all interfaces - **SECURITY RISK**)
+- ❌ **WRONG**: `<public-ip>:8001` (exposed to internet - **SECURITY RISK**)
+
+**Rationale**: MCP server provides direct database access with no authentication. Binding to public interfaces would allow unauthorized access to todo operations.
+
+#### Example SSE Deployment Architecture
+
+```
+┌─────────────────────────────────────┐
+│  Load Balancer (HTTPS)              │
+│  https://api.example.com            │
+└──────────┬──────────────────────────┘
+           │
+           ├─────────────────┬─────────────────┐
+           │                 │                 │
+           ▼                 ▼                 ▼
+┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐
+│ FastAPI Instance │ │ FastAPI Instance │ │ FastAPI Instance │
+│ (Orchestrator)   │ │ (Orchestrator)   │ │ (Orchestrator)   │
+│ Port: 8000       │ │ Port: 8000       │ │ Port: 8000       │
+└────────┬─────────┘ └────────┬─────────┘ └────────┬─────────┘
+         │                    │                    │
+         │  SSE (localhost)   │  SSE (localhost)   │
+         └────────────────────┼────────────────────┘
+                              │
+                              ▼
+                    ┌──────────────────┐
+                    │  MCP Server      │
+                    │  (Database)      │
+                    │  127.0.0.1:8001  │ ⚠️ Localhost only!
+                    └────────┬─────────┘
+                             │
+                             ▼
+                        PostgreSQL
+```
+
+#### Running MCP Server with SSE (When Implemented)
+
+**Step 1: Start MCP Server on localhost**
+
+```bash
+# Example command (not yet implemented)
+uv run python -m src.mcp_server.server \
+  --transport sse \
+  --host 127.0.0.1 \  # ⚠️ MUST be localhost
+  --port 8001
+```
+
+**Step 2: Verify Localhost Binding**
+
+```bash
+# Check that MCP server is only listening on localhost
+netstat -an | grep 8001
+
+# Expected output:
+# tcp4  0  0  127.0.0.1:8001  *.*  LISTEN
+
+# ❌ BAD output (security risk):
+# tcp4  0  0  0.0.0.0:8001    *.*  LISTEN
+```
+
+**Step 3: Configure FastAPI to Use SSE**
+
+Update `.env`:
+```env
+MCP_TRANSPORT_TYPE=sse
+MCP_SSE_URL=http://127.0.0.1:8001
+```
+
+**Step 4: Start FastAPI Instances**
+
+```bash
+# Start multiple instances (example: 3 instances)
+# Instance 1
+uv run uvicorn src.main:app --host 0.0.0.0 --port 8000
+
+# Instance 2
+uv run uvicorn src.main:app --host 0.0.0.0 --port 8001
+
+# Instance 3
+uv run uvicorn src.main:app --host 0.0.0.0 --port 8002
+```
+
+All instances connect to the same MCP server at `127.0.0.1:8001`.
+
+#### TLS/SSL Configuration (Production)
+
+For production SSE deployments with TLS:
+
+```env
+MCP_TRANSPORT_TYPE=sse
+MCP_SSE_URL=https://127.0.0.1:8001  # HTTPS instead of HTTP
+MCP_SSE_TLS_ENABLED=true
+MCP_SSE_TLS_CERT_PATH=/etc/ssl/certs/mcp-server.pem
+MCP_SSE_TLS_KEY_PATH=/etc/ssl/private/mcp-server-key.pem
+```
+
+**Note**: Even with TLS, MCP server MUST still bind to localhost only.
+
+#### Troubleshooting SSE Transport
+
+**Issue: "SSE transport is not yet implemented"**
+
+**Symptom**: Server fails to start with NotImplementedError.
+
+**Solution**: SSE transport is currently a placeholder. Use stdio transport:
+```env
+MCP_TRANSPORT_TYPE=stdio
+```
+
+**Issue: "Connection refused" with SSE URL**
+
+**Symptom**: FastAPI cannot connect to MCP server.
+
+**Solutions**:
+1. Verify MCP server is running: `curl http://127.0.0.1:8001/health`
+2. Check MCP server is bound to localhost: `netstat -an | grep 8001`
+3. Verify firewall allows localhost connections
+
+**Issue: Security warning about 0.0.0.0 binding**
+
+**Symptom**: Security scan detects MCP server on public interface.
+
+**Solution**: **IMMEDIATELY** reconfigure MCP server to bind 127.0.0.1 only. Public binding is a critical security vulnerability.
+
+### Migration from stdio to SSE
+
+When SSE transport becomes available:
+
+**Step 1: Backup Current Configuration**
+```bash
+cp .env .env.backup
+```
+
+**Step 2: Update Environment**
+```env
+MCP_TRANSPORT_TYPE=sse
+MCP_SSE_URL=http://127.0.0.1:8001
+```
+
+**Step 3: Test Locally**
+```bash
+# Start MCP server with SSE (when implemented)
+uv run python -m src.mcp_server.server --transport sse --host 127.0.0.1 --port 8001
+
+# In separate terminal, start FastAPI
+uv run uvicorn src.main:app --reload
+
+# Verify health check shows SSE connection
+curl http://localhost:8000/health
+```
+
+**Step 4: Validate Localhost Binding**
+```bash
+# Verify MCP server is NOT accessible from external network
+curl http://<external-ip>:8001  # Should fail (connection refused)
+
+# Verify it IS accessible from localhost
+curl http://127.0.0.1:8001  # Should succeed
+```
+
+**Step 5: Deploy to Production**
+
+Follow standard deployment process with SSE configuration.
 
 ---
 

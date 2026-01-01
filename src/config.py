@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     MCP_SERVER_TIMEOUT: int = Field(
         default=5, description="MCP server timeout in seconds"
     )
+    MCP_TRANSPORT_TYPE: str = Field(
+        default="stdio", description="MCP transport type (stdio or sse)"
+    )
 
     # Circuit Breaker Configuration
     CIRCUIT_BREAKER_MCP_FAILURE_THRESHOLD: int = Field(
@@ -114,6 +117,27 @@ class Settings(BaseSettings):
         if v_upper not in valid_levels:
             raise ValueError(f"LOG_LEVEL must be one of {valid_levels}")
         return v_upper
+
+    @field_validator("MCP_TRANSPORT_TYPE")
+    @classmethod
+    def validate_mcp_transport_type(cls, v: str) -> str:
+        """
+        Validate MCP transport type is either 'stdio' or 'sse'.
+
+        Args:
+            v: Transport type string
+
+        Returns:
+            Lowercase transport type string
+
+        Raises:
+            ValueError: If transport type is invalid
+        """
+        valid_types = ["stdio", "sse"]
+        v_lower = v.lower()
+        if v_lower not in valid_types:
+            raise ValueError(f"MCP_TRANSPORT_TYPE must be one of {valid_types}")
+        return v_lower
 
     class Config:
         """Pydantic configuration"""
