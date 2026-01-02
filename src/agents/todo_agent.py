@@ -4,7 +4,12 @@ Defines the OpenAI Agents SDK agent for natural language todo management
 
 Includes circuit breaker and retry logic for Gemini API resilience.
 """
-from agents import Agent, set_default_openai_client, OpenAIChatCompletionsModel, AsyncOpenAI
+
+from agents import (
+    Agent,
+    set_default_openai_client,
+    OpenAIChatCompletionsModel,
+)
 from agents.mcp import MCPServerStdio
 from typing import List, Any, Dict, Optional
 from src.config import get_gemini_client, get_gemini_circuit_breaker
@@ -52,6 +57,12 @@ Key behaviors:
      * Handle compound tasks: "I need to call mom" → title="call mom"
      * Preserve important context: "finish project proposal" → title="finish project proposal"
 
+   - **Description Extraction**: Capture supporting details beyond the short title
+     * Explicit markers: "Description: ...", "Details: ...", "Notes: ..." → description="<that text>"
+     * After separators: "Call dentist - schedule annual checkup" → title="call dentist", description="schedule annual checkup"
+     * Second sentence: "Buy groceries. Milk, eggs, bread." → title="buy groceries", description="Milk, eggs, bread."
+     * If no extra details are provided, omit description (leave it null)
+
    - **Due Date Parsing**: Convert temporal expressions to ISO 8601 datetime strings
      * Relative dates: "tomorrow" → next day's date, "next Friday" → upcoming Friday
      * Time specifications: "at 3pm" → 15:00:00, "by 5:30" → 17:30:00
@@ -75,7 +86,7 @@ Key behaviors:
    - ALWAYS use the MCP tools (create_todo, list_todos, update_todo, delete_todo)
    - NEVER attempt to store or manage todo data internally
    - Pass extracted attributes as tool arguments
-   - For CREATE operations, call create_todo with extracted: title, due_date (optional), priority, tags (optional)
+   - For CREATE operations, call create_todo with extracted: title, description (optional), due_date (optional), priority, tags (optional)
 
 4. **Natural Language Responses**:
    - Confirm operations in conversational language
@@ -147,11 +158,12 @@ Key behaviors:
    - **Never Pretend**: Don't attempt to handle out-of-scope requests or make up capabilities
 
 8. **Examples for CREATE Operations** (User Story 1):
-- "Remind me to buy eggs" → create_todo(title="buy eggs", priority="medium")
-- "Add high priority task: finish project proposal by Friday" → create_todo(title="finish project proposal", priority="high", due_date="<this Friday's ISO date>")
-- "I need to call mom tomorrow" → create_todo(title="call mom", due_date="<tomorrow's date at 09:00:00>", priority="medium")
-- "Remind me to buy eggs tomorrow at 3pm" → create_todo(title="buy eggs", due_date="<tomorrow's date>T15:00:00", priority="medium")
-- "Create urgent task: submit report ASAP" → create_todo(title="submit report", priority="high")
+ - "Remind me to buy eggs" → create_todo(title="buy eggs", priority="medium")
+ - "Add high priority task: finish project proposal by Friday" → create_todo(title="finish project proposal", priority="high", due_date="<this Friday's ISO date>")
+ - "I need to call mom tomorrow" → create_todo(title="call mom", due_date="<tomorrow's date at 09:00:00>", priority="medium")
+ - "Remind me to buy eggs tomorrow at 3pm" → create_todo(title="buy eggs", due_date="<tomorrow's date>T15:00:00", priority="medium")
+ - "Create urgent task: submit report ASAP" → create_todo(title="submit report", priority="high")
+ - "Call dentist - schedule annual checkup" → create_todo(title="call dentist", description="schedule annual checkup", priority="medium")
 
 9. **Attribute Extraction for LIST Operations** (User Story 2):
    - **Status Filter**: Extract desired completion state from query
@@ -316,7 +328,9 @@ Key behaviors:
 """
 
 
-async def create_todo_agent(mcp_servers: Optional[List[MCPServerStdio]] = None) -> Agent:
+async def create_todo_agent(
+    mcp_servers: Optional[List[MCPServerStdio]] = None,
+) -> Agent:
     """
     Create and configure the TodoAgent using OpenAI Agents SDK.
 
@@ -360,19 +374,25 @@ async def create_todo_agent(mcp_servers: Optional[List[MCPServerStdio]] = None) 
                 logger.info(
                     f"Listed {len(tools_list.tools) if tools_list and hasattr(tools_list, 'tools') else 0} tools from MCP server",
                     extra={
-                        "mcp_server": server.name if hasattr(server, 'name') else "unknown",
-                        "tools_count": len(tools_list.tools) if tools_list and hasattr(tools_list, 'tools') else 0
-                    }
+                        "mcp_server": (
+                            server.name if hasattr(server, "name") else "unknown"
+                        ),
+                        "tools_count": (
+                            len(tools_list.tools)
+                            if tools_list and hasattr(tools_list, "tools")
+                            else 0
+                        ),
+                    },
                 )
 
-                if tools_list and hasattr(tools_list, 'tools'):
+                if tools_list and hasattr(tools_list, "tools"):
                     discovered_tools.extend(tools_list.tools)
 
             except Exception as e:
                 logger.error(
                     f"Failed to list tools from MCP server: {e}",
                     extra={"error": str(e)},
-                    exc_info=True
+                    exc_info=True,
                 )
 
     # Create agent with both mcp_servers and discovered tools
@@ -392,7 +412,10 @@ async def create_todo_agent(mcp_servers: Optional[List[MCPServerStdio]] = None) 
 
     if discovered_tools:
         # Extract tool names from the discovered tools
-        discovered_tool_names = [tool.name if hasattr(tool, 'name') else str(tool) for tool in discovered_tools]
+        discovered_tool_names = [
+            tool.name if hasattr(tool, "name") else str(tool)
+            for tool in discovered_tools
+        ]
 
         logger.info(
             f"TodoAgent created with {len(mcp_servers) if mcp_servers else 0} MCP server(s) - "
@@ -401,8 +424,8 @@ async def create_todo_agent(mcp_servers: Optional[List[MCPServerStdio]] = None) 
                 "mcp_servers_count": len(mcp_servers) if mcp_servers else 0,
                 "discovered_tools_count": len(discovered_tool_names),
                 "discovered_tools": discovered_tool_names,
-                "agent_name": "TodoAgent"
-            }
+                "agent_name": "TodoAgent",
+            },
         )
 
         # T015: Log each discovered tool individually for detailed observability
@@ -412,8 +435,8 @@ async def create_todo_agent(mcp_servers: Optional[List[MCPServerStdio]] = None) 
                 extra={
                     "tool_name": tool_name,
                     "agent_name": "TodoAgent",
-                    "event": "tool_discovered"
-                }
+                    "event": "tool_discovered",
+                },
             )
     else:
         # No tools discovered (degraded mode or no MCP servers provided)
@@ -425,15 +448,17 @@ async def create_todo_agent(mcp_servers: Optional[List[MCPServerStdio]] = None) 
                 "discovered_tools_count": 0,
                 "discovered_tools": [],
                 "agent_name": "TodoAgent",
-                "degraded_mode": True
-            }
+                "degraded_mode": True,
+            },
         )
 
     return agent
 
 
 @gemini_retry
-async def _execute_agent_with_retry(agent: Agent, input_text: str, context: Any = None) -> Any:
+async def _execute_agent_with_retry(
+    agent: Agent, input_text: str, context: Any = None
+) -> Any:
     """
     Internal function to execute agent with retry logic.
 
@@ -499,8 +524,8 @@ async def _execute_agent_with_retry(agent: Agent, input_text: str, context: Any 
             extra={
                 "execution_duration_seconds": execution_duration,
                 "timeout_seconds": GEMINI_TIMEOUT_SECONDS,
-                "result_status": "timeout"
-            }
+                "result_status": "timeout",
+            },
         )
         raise TimeoutError(
             f"Gemini API execution exceeded timeout of {GEMINI_TIMEOUT_SECONDS}s"
@@ -515,8 +540,8 @@ async def _execute_agent_with_retry(agent: Agent, input_text: str, context: Any 
             extra={
                 "execution_duration_seconds": execution_duration,
                 "result_status": "failed",
-                "error_type": type(e).__name__
-            }
+                "error_type": type(e).__name__,
+            },
         )
         raise
 
@@ -529,13 +554,15 @@ async def _execute_agent_with_retry(agent: Agent, input_text: str, context: Any 
             extra={
                 "execution_duration_seconds": execution_duration,
                 "result_status": "error",
-                "error_type": type(e).__name__
-            }
+                "error_type": type(e).__name__,
+            },
         )
         raise
 
 
-def _log_tool_calls_from_result(result: Any, execution_duration: float, success: bool) -> None:
+def _log_tool_calls_from_result(
+    result: Any, execution_duration: float, success: bool
+) -> None:
     """
     T028: Extract and log tool call information from agent execution result.
 
@@ -555,14 +582,14 @@ def _log_tool_calls_from_result(result: Any, execution_duration: float, success:
     tool_calls = []
 
     # Try to extract tool calls from result
-    if hasattr(result, 'tool_calls'):
+    if hasattr(result, "tool_calls"):
         tool_calls = result.tool_calls
-    elif isinstance(result, dict) and 'tool_calls' in result:
-        tool_calls = result['tool_calls']
-    elif hasattr(result, 'messages'):
+    elif isinstance(result, dict) and "tool_calls" in result:
+        tool_calls = result["tool_calls"]
+    elif hasattr(result, "messages"):
         # Check messages for tool call information
         for message in result.messages:
-            if hasattr(message, 'tool_calls') and message.tool_calls:
+            if hasattr(message, "tool_calls") and message.tool_calls:
                 tool_calls.extend(message.tool_calls)
 
     # T028: Log overall agent execution
@@ -573,8 +600,8 @@ def _log_tool_calls_from_result(result: Any, execution_duration: float, success:
             "execution_duration_seconds": round(execution_duration, 3),
             "tools_called_count": len(tool_calls),
             "result_status": "success" if success else "failed",
-            "agent_name": "TodoAgent"
-        }
+            "agent_name": "TodoAgent",
+        },
     )
 
     # T028: Log each individual tool call
@@ -584,31 +611,42 @@ def _log_tool_calls_from_result(result: Any, execution_duration: float, success:
         tool_arguments = {}
         tool_status = "unknown"
 
-        if hasattr(tool_call, 'function'):
+        if hasattr(tool_call, "function"):
             # OpenAI SDK format with function object
-            tool_name = getattr(tool_call.function, 'name', 'unknown_tool')
-            tool_arguments_str = getattr(tool_call.function, 'arguments', '{}')
+            tool_name = getattr(tool_call.function, "name", "unknown_tool")
+            tool_arguments_str = getattr(tool_call.function, "arguments", "{}")
 
             # Parse arguments from JSON string if needed
             try:
                 import json
-                tool_arguments = json.loads(tool_arguments_str) if isinstance(tool_arguments_str, str) else tool_arguments_str
+
+                tool_arguments = (
+                    json.loads(tool_arguments_str)
+                    if isinstance(tool_arguments_str, str)
+                    else tool_arguments_str
+                )
             except (json.JSONDecodeError, TypeError):
                 tool_arguments = {"raw": tool_arguments_str}
 
             tool_status = "completed" if success else "failed"
 
-        elif hasattr(tool_call, 'name'):
+        elif hasattr(tool_call, "name"):
             # Direct name attribute
             tool_name = tool_call.name
-            tool_arguments = getattr(tool_call, 'arguments', {}) or getattr(tool_call, 'parameters', {})
+            tool_arguments = getattr(tool_call, "arguments", {}) or getattr(
+                tool_call, "parameters", {}
+            )
             tool_status = "completed" if success else "failed"
 
         elif isinstance(tool_call, dict):
             # Dictionary format
-            tool_name = tool_call.get('name') or tool_call.get('tool_name', 'unknown_tool')
-            tool_arguments = tool_call.get('arguments', {}) or tool_call.get('parameters', {})
-            tool_status = tool_call.get('status', 'completed' if success else 'failed')
+            tool_name = tool_call.get("name") or tool_call.get(
+                "tool_name", "unknown_tool"
+            )
+            tool_arguments = tool_call.get("arguments", {}) or tool_call.get(
+                "parameters", {}
+            )
+            tool_status = tool_call.get("status", "completed" if success else "failed")
 
         # T028: Log individual tool call with full validation details
         logger.info(
@@ -621,8 +659,8 @@ def _log_tool_calls_from_result(result: Any, execution_duration: float, success:
                 "tool_status": tool_status,
                 "execution_duration_seconds": round(execution_duration, 3),
                 "agent_name": "TodoAgent",
-                "result_status": "success" if success else "failed"
-            }
+                "result_status": "success" if success else "failed",
+            },
         )
 
         # T028: Log tool arguments in debug mode for detailed inspection
@@ -632,15 +670,15 @@ def _log_tool_calls_from_result(result: Any, execution_duration: float, success:
                 "event": "tool_arguments_detail",
                 "tool_name": tool_name,
                 "arguments": tool_arguments,
-                "argument_count": len(tool_arguments) if isinstance(tool_arguments, dict) else 0
-            }
+                "argument_count": (
+                    len(tool_arguments) if isinstance(tool_arguments, dict) else 0
+                ),
+            },
         )
 
 
 async def execute_agent_with_resilience(
-    agent: Agent,
-    input_text: str,
-    context: Any = None
+    agent: Agent, input_text: str, context: Any = None
 ) -> Dict[str, Any]:
     """
     Execute TodoAgent with circuit breaker and retry logic for resilience.
@@ -683,16 +721,10 @@ async def execute_agent_with_resilience(
     try:
         # Circuit breaker wraps retry logic
         result = await circuit_breaker.call(
-            _execute_agent_with_retry,
-            agent,
-            input_text,
-            context
+            _execute_agent_with_retry, agent, input_text, context
         )
 
-        return {
-            "success": True,
-            "result": result
-        }
+        return {"success": True, "result": result}
 
     except CircuitBreakerError as e:
         logger.error(f"Circuit breaker open for Gemini API: {e}")
@@ -700,7 +732,7 @@ async def execute_agent_with_resilience(
             "success": False,
             "error": "circuit_breaker_open",
             "message": "AI service temporarily unavailable. Please try again later.",
-            "details": str(e)
+            "details": str(e),
         }
 
     except Exception as e:
@@ -709,5 +741,5 @@ async def execute_agent_with_resilience(
             "success": False,
             "error": "execution_failed",
             "message": f"Failed to process request: {str(e)}",
-            "details": str(e)
+            "details": str(e),
         }
