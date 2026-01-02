@@ -5,11 +5,12 @@ These schemas provide type safety, validation, and clear error messages
 for tool callers.
 """
 
-from typing import Optional
+from datetime import datetime
+from typing import Optional, List
 
 from pydantic import BaseModel, Field, field_validator
 
-from .models import TodoStatus
+from .models import TodoStatus, TodoPriority
 
 
 class CreateTodoInput(BaseModel):
@@ -21,6 +22,9 @@ class CreateTodoInput(BaseModel):
     Attributes:
         title: Todo title (required, 1-200 chars after stripping whitespace)
         description: Optional description (max 2000 chars)
+        due_date: Optional due date/time (ISO 8601 datetime string)
+        priority: Priority level (low/medium/high, default: medium)
+        tags: Optional list of category tags
     """
 
     title: str = Field(
@@ -34,6 +38,21 @@ class CreateTodoInput(BaseModel):
         default=None,
         max_length=2000,
         description="Optional todo description (max 2000 chars)"
+    )
+
+    due_date: Optional[datetime] = Field(
+        default=None,
+        description="Optional due date/time (ISO 8601 datetime string, UTC)"
+    )
+
+    priority: TodoPriority = Field(
+        default=TodoPriority.MEDIUM,
+        description="Priority level: low, medium (default), or high"
+    )
+
+    tags: Optional[List[str]] = Field(
+        default=None,
+        description="Optional list of category tags (e.g., ['work', 'urgent'])"
     )
 
     @field_validator("title", mode="after")
@@ -55,12 +74,54 @@ class CreateTodoInput(BaseModel):
             raise ValueError("Title cannot be empty or whitespace-only")
         return stripped
 
+    @field_validator("tags", mode="after")
+    @classmethod
+    def validate_tags_not_empty(cls, value: Optional[List[str]]) -> Optional[List[str]]:
+        """Ensure tags list doesn't contain empty strings and normalize tag values.
+
+        Args:
+            value: The tags list to validate (or None)
+
+        Returns:
+            Optional[List[str]]: Validated and normalized tags list or None
+
+        Raises:
+            ValueError: If any tag is empty or whitespace-only
+        """
+        if value is None:
+            return None
+
+        # Strip whitespace from each tag and validate
+        normalized_tags = []
+        for tag in value:
+            if not isinstance(tag, str):
+                raise ValueError(f"Tag must be a string, got {type(tag).__name__}")
+
+            stripped_tag = tag.strip().lower()  # Normalize to lowercase
+            if not stripped_tag:
+                raise ValueError("Tags cannot be empty or whitespace-only")
+
+            normalized_tags.append(stripped_tag)
+
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_tags = []
+        for tag in normalized_tags:
+            if tag not in seen:
+                seen.add(tag)
+                unique_tags.append(tag)
+
+        return unique_tags if unique_tags else None
+
     class Config:
         """Pydantic model configuration."""
         json_schema_extra = {
             "example": {
                 "title": "Buy groceries",
-                "description": "Milk, eggs, bread, and coffee"
+                "description": "Milk, eggs, bread, and coffee",
+                "due_date": "2025-12-30T15:00:00Z",
+                "priority": "medium",
+                "tags": ["shopping", "personal"]
             }
         }
 

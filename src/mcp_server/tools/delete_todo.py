@@ -11,13 +11,13 @@ from typing import Optional
 
 from sqlmodel import Session, select
 
-from ..database import engine
-from ..models import Todo
-from ..server import mcp
+from src.mcp_server.database import engine
+from src.mcp_server.models import Todo
+from src.mcp_server.server import mcp
 
 
-def delete_todo(id: int, _test_session: Optional[Session] = None) -> str:
-    """Permanently deletes a todo from the database (hard delete).
+def _delete_todo_impl(id: int, _test_session: Optional[Session] = None) -> str:
+    """Internal implementation of delete_todo with test session support.
 
     This tool performs a hard delete, completely removing the todo from the database.
     The todo cannot be recovered after deletion. Raises an error if the todo ID
@@ -107,7 +107,7 @@ def delete_todo(id: int, _test_session: Optional[Session] = None) -> str:
 
 # Create MCP tool wrapper that excludes test parameter
 @mcp.tool
-def delete_todo_mcp(id: int) -> str:
+def delete_todo(id: int) -> str:
     """Permanently deletes a todo by ID (hard delete).
 
     Removes the todo completely from the database. Cannot be recovered after deletion.
@@ -122,4 +122,4 @@ def delete_todo_mcp(id: int) -> str:
     Raises:
         ValueError: If todo with given ID doesn't exist
     """
-    return delete_todo(id=id, _test_session=None)
+    return _delete_todo_impl(id=id, _test_session=None)

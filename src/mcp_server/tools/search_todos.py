@@ -17,9 +17,9 @@ from typing import Optional
 
 from sqlmodel import Session, select, or_
 
-from ..database import engine
-from ..models import Todo, TodoStatus
-from ..server import mcp
+from src.mcp_server.database import engine
+from src.mcp_server.models import Todo, TodoStatus
+from src.mcp_server.server import mcp
 
 
 def _sanitize_search_keyword(keyword: str) -> str:
@@ -104,8 +104,8 @@ def _sanitize_search_keyword(keyword: str) -> str:
     return keyword
 
 
-def search_todos(keyword: str, _test_session: Optional[Session] = None) -> str:
-    """Searches active todos by keyword in title or description.
+def _search_todos_impl(keyword: str, _test_session: Optional[Session] = None) -> str:
+    """Internal implementation of search_todos with test session support.
 
     This tool performs case-insensitive keyword matching across both title and
     description fields, returning only active todos that match. Completed and
@@ -220,7 +220,7 @@ def search_todos(keyword: str, _test_session: Optional[Session] = None) -> str:
 
 # Create MCP tool wrapper that excludes test parameter
 @mcp.tool
-def search_todos_mcp(keyword: str) -> str:
+def search_todos(keyword: str) -> str:
     """Searches active todos by keyword in title or description.
 
     Performs case-insensitive search across title and description fields.
@@ -232,4 +232,4 @@ def search_todos_mcp(keyword: str) -> str:
     Returns:
         str: Summary and list of matching todos with details
     """
-    return search_todos(keyword=keyword, _test_session=None)
+    return _search_todos_impl(keyword=keyword, _test_session=None)

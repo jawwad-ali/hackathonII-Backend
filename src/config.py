@@ -9,8 +9,9 @@ from pydantic_settings import BaseSettings
 from pydantic import Field, field_validator
 from typing import List
 import os
-from openai import AsyncOpenAI
+# from openai import AsyncOpenAI
 from datetime import timedelta
+
 
 # Import resilience components
 from src.resilience.circuit_breaker import (
@@ -19,7 +20,7 @@ from src.resilience.circuit_breaker import (
     CircuitBreakerError
 )
 from src.resilience.retry import gemini_retry
-
+from agents import AsyncOpenAI, OpenAIChatCompletionsModel, RunConfig
 
 class Settings(BaseSettings):
     """
@@ -50,7 +51,10 @@ class Settings(BaseSettings):
         description="MCP server arguments (comma-separated)",
     )
     MCP_SERVER_TIMEOUT: int = Field(
-        default=30, description="MCP server timeout in seconds"
+        default=5, description="MCP server timeout in seconds"
+    )
+    MCP_TRANSPORT_TYPE: str = Field(
+        default="stdio", description="MCP transport type (stdio or sse)"
     )
 
     # Circuit Breaker Configuration
@@ -114,6 +118,27 @@ class Settings(BaseSettings):
         if v_upper not in valid_levels:
             raise ValueError(f"LOG_LEVEL must be one of {valid_levels}")
         return v_upper
+
+    @field_validator("MCP_TRANSPORT_TYPE")
+    @classmethod
+    def validate_mcp_transport_type(cls, v: str) -> str:
+        """
+        Validate MCP transport type is either 'stdio' or 'sse'.
+
+        Args:
+            v: Transport type string
+
+        Returns:
+            Lowercase transport type string
+
+        Raises:
+            ValueError: If transport type is invalid
+        """
+        valid_types = ["stdio", "sse"]
+        v_lower = v.lower()
+        if v_lower not in valid_types:
+            raise ValueError(f"MCP_TRANSPORT_TYPE must be one of {valid_types}")
+        return v_lower
 
     class Config:
         """Pydantic configuration"""
@@ -204,7 +229,6 @@ def get_gemini_client() -> AsyncOpenAI:
     return AsyncOpenAI(
         api_key=config["api_key"],
         base_url=config["base_url"],
-        timeout=settings.REQUEST_TIMEOUT,  # 30 seconds default
     )
 
 

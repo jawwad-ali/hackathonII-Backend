@@ -32,6 +32,11 @@ class ChatRequest(BaseModel):
         description="Optional client-provided request ID for correlation"
     )
 
+    thread_id: Optional[str] = Field(
+        None,
+        description="Optional thread ID for conversation tracking across multiple requests"
+    )
+
     @field_validator('message')
     @classmethod
     def sanitize_message(cls, v: str) -> str:
@@ -75,7 +80,8 @@ class ChatRequest(BaseModel):
         json_schema_extra = {
             "example": {
                 "message": "Remind me to buy eggs tomorrow at 3pm",
-                "request_id": "req_123abc"
+                "request_id": "req_123abc",
+                "thread_id": "thread_456def"
             }
         }
 
@@ -131,11 +137,20 @@ class ErrorResponse(BaseModel):
     Schema for error responses.
 
     Ensures user-friendly error messages without exposing internal details.
+
+    T019: Added status field to distinguish between error types:
+    - "error": General error condition
+    - "degraded": Service operating in degraded mode (partial functionality available)
     """
 
     error: str = Field(
         ...,
         description="User-friendly error message"
+    )
+
+    status: Optional[str] = Field(
+        default="error",
+        description="Error status type: 'error' (general failure) or 'degraded' (partial functionality)"
     )
 
     error_code: Optional[str] = Field(
@@ -153,6 +168,7 @@ class ErrorResponse(BaseModel):
         json_schema_extra = {
             "example": {
                 "error": "The todo service is temporarily unavailable. Please try again in a few moments.",
+                "status": "degraded",
                 "error_code": "SERVICE_UNAVAILABLE",
                 "request_id": "req_123abc"
             }

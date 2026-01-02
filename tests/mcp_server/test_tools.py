@@ -8,10 +8,10 @@ These tests are written FIRST (TDD approach) and will initially FAIL.
 """
 
 import pytest
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from sqlmodel import select
 
-from src.mcp_server.models import Todo, TodoStatus
+from src.mcp_server.models import Todo, TodoStatus, TodoPriority
 from src.mcp_server.schemas import CreateTodoInput
 
 
@@ -234,6 +234,222 @@ class TestCreateTodoTool:
         assert isinstance(result, str)
         assert len(result) > 0
         assert title in result  # Response should mention the created todo
+
+    def test_create_todo_with_due_date(self, session):
+        """Test creating a todo with a due_date specified."""
+        # Arrange
+        from src.mcp_server.tools.create_todo import create_todo
+
+        title = "Meeting with client"
+        due_date = datetime.now(timezone.utc) + timedelta(days=2)
+
+        # Act
+        result = create_todo(title=title, due_date=due_date, _test_session=session)
+
+        # Assert - Verify todo was created with due_date
+        statement = select(Todo).where(Todo.title == title)
+        created_todo = session.exec(statement).first()
+
+        assert created_todo is not None
+        assert created_todo.due_date is not None
+        assert created_todo.due_date == due_date
+
+        # Assert - Verify MCP response includes due date
+        assert isinstance(result, str)
+        assert "due" in result.lower() or str(due_date.isoformat()) in result
+
+    def test_create_todo_with_priority_high(self, session):
+        """Test creating a high priority todo."""
+        # Arrange
+        from src.mcp_server.tools.create_todo import create_todo
+
+        title = "Urgent: Fix production bug"
+
+        # Act
+        result = create_todo(title=title, priority="high", _test_session=session)
+
+        # Assert - Verify todo was created with high priority
+        statement = select(Todo).where(Todo.title == title)
+        created_todo = session.exec(statement).first()
+
+        assert created_todo is not None
+        assert created_todo.priority == TodoPriority.HIGH
+
+        # Assert - Verify MCP response mentions priority
+        assert isinstance(result, str)
+        assert "high" in result.lower()
+
+    def test_create_todo_with_priority_low(self, session):
+        """Test creating a low priority todo."""
+        # Arrange
+        from src.mcp_server.tools.create_todo import create_todo
+
+        title = "Read documentation"
+
+        # Act
+        result = create_todo(title=title, priority="low", _test_session=session)
+
+        # Assert - Verify todo was created with low priority
+        statement = select(Todo).where(Todo.title == title)
+        created_todo = session.exec(statement).first()
+
+        assert created_todo is not None
+        assert created_todo.priority == TodoPriority.LOW
+
+        # Assert - Verify MCP response mentions priority
+        assert isinstance(result, str)
+        assert "low" in result.lower()
+
+    def test_create_todo_default_priority_medium(self, session):
+        """Test that priority defaults to MEDIUM when not specified."""
+        # Arrange
+        from src.mcp_server.tools.create_todo import create_todo
+
+        title = "Regular task"
+
+        # Act
+        result = create_todo(title=title, _test_session=session)
+
+        # Assert - Verify default priority is MEDIUM
+        statement = select(Todo).where(Todo.title == title)
+        created_todo = session.exec(statement).first()
+
+        assert created_todo is not None
+        assert created_todo.priority == TodoPriority.MEDIUM
+
+    def test_create_todo_with_tags(self, session):
+        """Test creating a todo with tags."""
+        # Arrange
+        from src.mcp_server.tools.create_todo import create_todo
+
+        title = "Prepare presentation"
+        tags = ["work", "urgent", "meeting"]
+
+        # Act
+        result = create_todo(title=title, tags=tags, _test_session=session)
+
+        # Assert - Verify todo was created with tags
+        statement = select(Todo).where(Todo.title == title)
+        created_todo = session.exec(statement).first()
+
+        assert created_todo is not None
+        assert created_todo.tags is not None
+        assert len(created_todo.tags) == 3
+        assert "work" in created_todo.tags
+        assert "urgent" in created_todo.tags
+        assert "meeting" in created_todo.tags
+
+        # Assert - Verify MCP response mentions tags
+        assert isinstance(result, str)
+        assert "work" in result.lower() or "tags" in result.lower()
+
+    def test_create_todo_tags_normalized_lowercase(self, session):
+        """Test that tags are normalized to lowercase."""
+        # Arrange
+        from src.mcp_server.tools.create_todo import create_todo
+
+        title = "Task with mixed case tags"
+        tags = ["Work", "URGENT", "Personal"]
+
+        # Act
+        result = create_todo(title=title, tags=tags, _test_session=session)
+
+        # Assert - Verify tags are normalized to lowercase
+        statement = select(Todo).where(Todo.title == title)
+        created_todo = session.exec(statement).first()
+
+        assert created_todo is not None
+        assert created_todo.tags == ["work", "urgent", "personal"]
+
+    def test_create_todo_tags_remove_duplicates(self, session):
+        """Test that duplicate tags are removed."""
+        # Arrange
+        from src.mcp_server.tools.create_todo import create_todo
+
+        title = "Task with duplicate tags"
+        tags = ["work", "urgent", "work", "WORK", "urgent"]
+
+        # Act
+        result = create_todo(title=title, tags=tags, _test_session=session)
+
+        # Assert - Verify duplicates are removed
+        statement = select(Todo).where(Todo.title == title)
+        created_todo = session.exec(statement).first()
+
+        assert created_todo is not None
+        assert len(created_todo.tags) == 2  # Only "work" and "urgent"
+        assert "work" in created_todo.tags
+        assert "urgent" in created_todo.tags
+
+    def test_create_todo_with_all_fields(self, session):
+        """Test creating a todo with all fields specified."""
+        # Arrange
+        from src.mcp_server.tools.create_todo import create_todo
+
+        title = "Complete project proposal"
+        description = "Write and submit the Q1 project proposal"
+        due_date = datetime.now(timezone.utc) + timedelta(days=7)
+        priority = "high"
+        tags = ["work", "deadline", "important"]
+
+        # Act
+        result = create_todo(
+            title=title,
+            description=description,
+            due_date=due_date,
+            priority=priority,
+            tags=tags,
+            _test_session=session
+        )
+
+        # Assert - Verify all fields are set correctly
+        statement = select(Todo).where(Todo.title == title)
+        created_todo = session.exec(statement).first()
+
+        assert created_todo is not None
+        assert created_todo.title == title
+        assert created_todo.description == description
+        assert created_todo.due_date == due_date
+        assert created_todo.priority == TodoPriority.HIGH
+        assert created_todo.tags == tags
+        assert created_todo.status == TodoStatus.ACTIVE
+
+        # Assert - Verify MCP response mentions all key details
+        assert isinstance(result, str)
+        assert title in result
+        assert "high" in result.lower()
+
+    def test_create_todo_invalid_priority(self):
+        """Test that invalid priority value raises validation error."""
+        # Arrange
+        from src.mcp_server.tools.create_todo import create_todo
+
+        title = "Test invalid priority"
+        invalid_priority = "super_urgent"  # Not a valid priority
+
+        # Act & Assert - Should raise validation error
+        with pytest.raises(Exception) as exc_info:
+            create_todo(title=title, priority=invalid_priority, _test_session=None)
+
+        # Verify error mentions validation or priority
+        error_message = str(exc_info.value).lower()
+        assert "validation" in error_message or "priority" in error_message or "value" in error_message
+
+    def test_create_todo_tags_empty_string_rejected(self):
+        """Test that tags containing empty strings are rejected."""
+        # Arrange
+        from src.mcp_server.tools.create_todo import create_todo
+
+        title = "Test empty tag"
+        tags = ["work", "", "urgent"]  # Contains empty string
+
+        # Act & Assert - Should raise validation error
+        with pytest.raises(Exception) as exc_info:
+            create_todo(title=title, tags=tags, _test_session=None)
+
+        # Verify error mentions tags or empty
+        error_message = str(exc_info.value).lower()
+        assert "validation" in error_message or "tags" in error_message or "empty" in error_message
 
     def test_create_multiple_todos_sequentially(self, session):
         """Test creating multiple todos in sequence generates unique IDs."""

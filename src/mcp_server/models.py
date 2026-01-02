@@ -6,9 +6,10 @@ All models include Pydantic validation and SQLAlchemy ORM capabilities.
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional
+from typing import Optional, List
 
-from sqlmodel import Field, SQLModel
+from sqlmodel import Field, SQLModel, Column
+from sqlalchemy import JSON
 
 
 class TodoStatus(str, Enum):
@@ -24,6 +25,19 @@ class TodoStatus(str, Enum):
     ARCHIVED = "archived"
 
 
+class TodoPriority(str, Enum):
+    """Todo priority enumeration.
+
+    Defines priority levels for todo items:
+    - LOW: Low priority tasks (can be done later)
+    - MEDIUM: Normal priority tasks (default)
+    - HIGH: High priority/urgent tasks (should be done soon)
+    """
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
 class Todo(SQLModel, table=True):
     """Todo entity for database persistence.
 
@@ -34,6 +48,9 @@ class Todo(SQLModel, table=True):
         id: Unique identifier (auto-increment)
         title: Todo title/summary (required, max 200 chars)
         description: Detailed description (optional, max 2000 chars)
+        due_date: When the todo is due (optional, ISO 8601 datetime)
+        priority: Priority level (low/medium/high, default: medium)
+        tags: Category tags for organization (optional, list of strings)
         status: Current lifecycle state (active/completed/archived)
         created_at: Timestamp when todo was created (UTC)
         updated_at: Timestamp of last modification (UTC)
@@ -62,6 +79,24 @@ class Todo(SQLModel, table=True):
         description="Todo description (optional, max 2000 chars)"
     )
 
+    due_date: Optional[datetime] = Field(
+        default=None,
+        index=True,
+        description="Due date/time (optional, ISO 8601 datetime in UTC)"
+    )
+
+    priority: TodoPriority = Field(
+        default=TodoPriority.MEDIUM,
+        index=True,
+        description="Priority level (low/medium/high)"
+    )
+
+    tags: Optional[List[str]] = Field(
+        default=None,
+        sa_column=Column(JSON),
+        description="Category tags (optional, list of strings)"
+    )
+
     status: TodoStatus = Field(
         default=TodoStatus.ACTIVE,
         index=True,
@@ -87,6 +122,9 @@ class Todo(SQLModel, table=True):
                 "id": 1,
                 "title": "Buy groceries",
                 "description": "Milk, eggs, bread",
+                "due_date": "2025-12-30T15:00:00Z",
+                "priority": "medium",
+                "tags": ["shopping", "personal"],
                 "status": "active",
                 "created_at": "2025-12-29T12:00:00Z",
                 "updated_at": "2025-12-29T12:00:00Z"

@@ -1,0 +1,125 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MCP Connection Schema",
+  "description": "Runtime state representation of the MCP server connection",
+  "type": "object",
+  "properties": {
+    "transport_type": {
+      "type": "string",
+      "enum": ["stdio", "sse"],
+      "description": "Transport protocol used for MCP communication"
+    },
+    "server_name": {
+      "type": "string",
+      "description": "Name of the MCP server",
+      "example": "TodoDatabaseServer"
+    },
+    "process_handle": {
+      "type": ["object", "null"],
+      "description": "Subprocess handle (only for stdio transport)",
+      "properties": {
+        "pid": {
+          "type": "integer",
+          "description": "Process ID"
+        },
+        "returncode": {
+          "type": ["integer", "null"],
+          "description": "Process return code (null if still running)"
+        }
+      }
+    },
+    "connection_state": {
+      "type": "string",
+      "enum": ["connected", "disconnected", "degraded"],
+      "description": "Current connection state"
+    },
+    "last_health_check": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp of last successful health check"
+    },
+    "discovered_tools": {
+      "type": "array",
+      "description": "List of tools discovered from MCP server",
+      "items": {
+        "$ref": "#/definitions/ToolDefinition"
+      }
+    },
+    "initialization_time": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Time taken to initialize connection (seconds)"
+    }
+  },
+  "required": [
+    "transport_type",
+    "server_name",
+    "connection_state",
+    "last_health_check",
+    "discovered_tools",
+    "initialization_time"
+  ],
+  "definitions": {
+    "ToolDefinition": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Tool name",
+          "examples": ["create_todo", "list_todos", "update_todo", "search_todos", "delete_todo"]
+        },
+        "description": {
+          "type": "string",
+          "description": "Tool description for LLM"
+        },
+        "input_schema": {
+          "type": "object",
+          "description": "JSON Schema for input parameters"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Tool categorization tags"
+        },
+        "metadata": {
+          "type": "object",
+          "description": "Custom metadata",
+          "additionalProperties": true
+        }
+      },
+      "required": ["name", "description", "input_schema"]
+    }
+  },
+  "examples": [
+    {
+      "transport_type": "stdio",
+      "server_name": "TodoDatabaseServer",
+      "process_handle": {
+        "pid": 12345,
+        "returncode": null
+      },
+      "connection_state": "connected",
+      "last_health_check": "2025-12-31T10:30:00Z",
+      "discovered_tools": [
+        {
+          "name": "create_todo",
+          "description": "Creates a new todo item",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "title": {"type": "string"},
+              "description": {"type": "string"},
+              "priority": {"type": "integer", "minimum": 1, "maximum": 5}
+            },
+            "required": ["title"]
+          },
+          "tags": ["crud", "create"],
+          "metadata": {"version": "1.0"}
+        }
+      ],
+      "initialization_time": 1.23
+    }
+  ]
+}

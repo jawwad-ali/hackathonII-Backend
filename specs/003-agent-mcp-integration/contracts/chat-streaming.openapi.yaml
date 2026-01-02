@@ -1,0 +1,303 @@
+openapi: 3.0.3
+info:
+  title: Todo Agent ChatKit Streaming API
+  description: |
+    Server-Sent Events (SSE) streaming endpoint for conversational todo management.
+    Integrates TodoAgent with FastMCP Database Server for CRUD operations.
+  version: 1.0.0
+  contact:
+    name: API Support
+    email: support@example.com
+
+servers:
+  - url: http://localhost:8000
+    description: Local development server
+  - url: https://api.example.com
+    description: Production server
+
+tags:
+  - name: Chat
+    description: Conversational interface for todo management
+  - name: Health
+    description: Service health and monitoring
+
+paths:
+  /chat/stream:
+    post:
+      tags:
+        - Chat
+      summary: Stream chat response with agent tool execution
+      description: |
+        Sends a user message to the TodoAgent and streams the response using Server-Sent Events (SSE).
+        The stream includes agent thinking, tool calls, and final responses in real-time.
+
+        **Event Types:**
+        - `THINKING` - Agent reasoning process
+        - `TOOL_CALL` - MCP tool execution (IN_PROGRESS, COMPLETED, FAILED)
+        - `RESPONSE_DELTA` - Incremental text response
+        - `ERROR` - Error occurred during processing
+        - `DONE` - Stream complete with final output
+
+        **Degraded Mode:**
+        If MCP server is unavailable, returns HTTP 200 with error message in response body
+        (not HTTP 503) per graceful degradation requirements.
+      operationId: streamChat
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
+            examples:
+              createTodo:
+                summary: Create a todo
+                value:
+                  message: "Create a task to buy groceries"
+                  request_id: "req_001"
+              listTodos:
+                summary: List todos
+                value:
+                  message: "What are my active tasks?"
+                  request_id: "req_002"
+              updateTodo:
+                summary: Update a todo
+                value:
+                  message: "Mark todo 1 as completed"
+                  request_id: "req_003"
+      responses:
+        '200':
+          description: SSE stream of agent events or degraded mode error
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: Server-Sent Events stream
+              examples:
+                successfulStream:
+                  summary: Successful tool execution stream
+                  value: |
+                    event: THINKING
+                    data: {"content": "I'll create a todo for buying groceries"}
+
+                    event: TOOL_CALL
+                    data: {"tool_name": "create_todo", "status": "IN_PROGRESS", "args": {"title": "Buy groceries"}}
+
+                    event: TOOL_CALL
+                    data: {"tool_name": "create_todo", "status": "COMPLETED", "result": {"id": 1, "title": "Buy groceries", "status": "active"}}
+
+                    event: RESPONSE_DELTA
+                    data: {"text": "I've created a todo for buying groceries with ID 1."}
+
+                    event: DONE
+                    data: {"final_output": "I've created a todo for buying groceries with ID 1."}
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                degradedMode:
+                  summary: Degraded mode (MCP unavailable)
+                  value:
+                    error: "Todo database is temporarily unavailable. Please try again later."
+                    status: "degraded"
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "Rate limit exceeded. Please try again later."
+                status: "error"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "An unexpected error occurred."
+                status: "error"
+
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Health check with circuit breaker status
+      description: |
+        Returns service health status including circuit breaker states for MCP and Gemini services.
+
+        **Status Values:**
+        - `healthy` - All services operational (both circuit breakers CLOSED)
+        - `degraded` - MCP circuit breaker OPEN, Gemini operational (HTTP 200)
+        - `critical` - Gemini circuit breaker OPEN (HTTP 503)
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Service is healthy or degraded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              examples:
+                healthy:
+                  summary: All services operational
+                  value:
+                    status: "healthy"
+                    uptime: 123.45
+                    circuit_breakers:
+                      mcp:
+                        state: "CLOSED"
+                        failure_count: 0
+                      gemini:
+                        state: "CLOSED"
+                        failure_count: 0
+                    metrics:
+                      total_requests: 100
+                      successful_requests: 95
+                      failed_requests: 5
+                      success_rate: 0.95
+                degraded:
+                  summary: MCP unavailable (degraded mode)
+                  value:
+                    status: "degraded"
+                    uptime: 200.0
+                    circuit_breakers:
+                      mcp:
+                        state: "OPEN"
+                        failure_count: 5
+                      gemini:
+                        state: "CLOSED"
+                        failure_count: 0
+                    metrics:
+                      total_requests: 150
+                      successful_requests: 120
+                      failed_requests: 30
+                      success_rate: 0.8
+        '503':
+          description: Service is critical (Gemini unavailable)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: "critical"
+                uptime: 300.0
+                circuit_breakers:
+                  mcp:
+                    state: "CLOSED"
+                    failure_count: 0
+                  gemini:
+                    state: "OPEN"
+                    failure_count: 3
+
+components:
+  schemas:
+    ChatRequest:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          description: User message for the TodoAgent
+          minLength: 1
+          maxLength: 5000
+          example: "Create a task to buy groceries"
+        request_id:
+          type: string
+          description: Optional correlation ID for tracking
+          pattern: '^[a-zA-Z0-9_-]+$'
+          example: "req_001"
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - status
+      properties:
+        error:
+          type: string
+          description: Human-readable error message
+          example: "Todo database is temporarily unavailable. Please try again later."
+        status:
+          type: string
+          enum: [error, degraded]
+          description: Error status indicator
+          example: "degraded"
+
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - uptime
+        - circuit_breakers
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded, critical]
+          description: Overall service health status
+        uptime:
+          type: number
+          format: float
+          description: Server uptime in seconds
+          example: 123.45
+        circuit_breakers:
+          type: object
+          description: Circuit breaker states for external services
+          required:
+            - mcp
+            - gemini
+          properties:
+            mcp:
+              $ref: '#/components/schemas/CircuitBreakerStatus'
+            gemini:
+              $ref: '#/components/schemas/CircuitBreakerStatus'
+        metrics:
+          type: object
+          description: Request metrics
+          properties:
+            total_requests:
+              type: integer
+              description: Total requests processed
+              example: 100
+            successful_requests:
+              type: integer
+              description: Successful requests
+              example: 95
+            failed_requests:
+              type: integer
+              description: Failed requests
+              example: 5
+            success_rate:
+              type: number
+              format: float
+              minimum: 0
+              maximum: 1
+              description: Success rate (0.0 to 1.0)
+              example: 0.95
+
+    CircuitBreakerStatus:
+      type: object
+      required:
+        - state
+        - failure_count
+      properties:
+        state:
+          type: string
+          enum: [CLOSED, OPEN, HALF-OPEN]
+          description: Circuit breaker state
+          example: "CLOSED"
+        failure_count:
+          type: integer
+          minimum: 0
+          description: Consecutive failure count
+          example: 0
+
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: Optional JWT authentication (not implemented in MVP)
+
+# No security required for MVP (localhost development)
+# Production should add authentication

@@ -12,13 +12,13 @@ from typing import Optional
 
 from sqlmodel import Session, select
 
-from ..database import engine
-from ..models import Todo, TodoStatus
-from ..schemas import UpdateTodoInput
-from ..server import mcp
+from src.mcp_server.database import engine
+from src.mcp_server.models import Todo, TodoStatus
+from src.mcp_server.schemas import UpdateTodoInput
+from src.mcp_server.server import mcp
 
 
-def update_todo(
+def _update_todo_impl(
     id: int,
     title: Optional[str] = None,
     description: Optional[str] = None,
@@ -179,7 +179,7 @@ def update_todo(
 
 # Create MCP tool wrapper that excludes test parameter
 @mcp.tool
-def update_todo_mcp(
+def update_todo(
     id: int,
     title: Optional[str] = None,
     description: Optional[str] = None,
@@ -199,7 +199,7 @@ def update_todo_mcp(
     Returns:
         str: Success message with updated todo details
     """
-    return update_todo(
+    return _update_todo_impl(
         id=id,
         title=title,
         description=description,

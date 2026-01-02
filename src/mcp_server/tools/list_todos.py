@@ -11,13 +11,13 @@ from typing import Optional
 
 from sqlmodel import Session, select
 
-from ..database import engine
-from ..models import Todo, TodoStatus
-from ..server import mcp
+from src.mcp_server.database import engine
+from src.mcp_server.models import Todo, TodoStatus
+from src.mcp_server.server import mcp
 
 
-def list_todos(_test_session: Optional[Session] = None) -> str:
-    """Retrieves all active todos from the database.
+def _list_todos_impl(_test_session: Optional[Session] = None) -> str:
+    """Internal implementation of list_todos with test session support.
 
     This tool queries the database for todos with status='active', excluding
     completed and archived todos. Returns a formatted list with all todo details.
@@ -101,9 +101,9 @@ def list_todos(_test_session: Optional[Session] = None) -> str:
                 raise Exception(f"Database error while listing todos: {str(e)}")
 
 
-# Create MCP tool wrapper that excludes test parameter
+# MCP tool wrapper that calls internal implementation without test parameter
 @mcp.tool
-def list_todos_mcp() -> str:
+def list_todos() -> str:
     """Retrieves all active todos from the database.
 
     Returns only todos with status='active', excluding completed and archived items.
@@ -111,4 +111,4 @@ def list_todos_mcp() -> str:
     Returns:
         str: Summary and list of active todos with details
     """
-    return list_todos(_test_session=None)
+    return _list_todos_impl(_test_session=None)

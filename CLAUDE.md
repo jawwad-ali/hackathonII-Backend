@@ -1,4 +1,4 @@
-# Claude Code Instructions - AI Agent Orchestrator
+﻿# Claude Code Instructions - AI Agent Orchestrator
 
 > **Project**: AI Agent Orchestrator for Todo Management
 > **Stack**: FastAPI + Gemini 2.5 Flash + PostgreSQL + FastMCP
@@ -676,4 +676,4 @@ MAX_CONCURRENT_CONNECTIONS=100
 ---
 
 **Version**: 1.0.0
-**Last Updated**: 2025-12-29
+**Last Updated**: 2025-12-31

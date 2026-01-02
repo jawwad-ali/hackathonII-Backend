@@ -8,27 +8,37 @@ responses to the AI agent.
 """
 
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, List
 
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session
 
-from ..database import engine
-from ..models import Todo, TodoStatus
-from ..schemas import CreateTodoInput
-from ..server import mcp
+from src.mcp_server.database import engine
+from src.mcp_server.models import Todo, TodoStatus, TodoPriority
+from src.mcp_server.schemas import CreateTodoInput
+from src.mcp_server.server import mcp
 
 
-def create_todo(title: str, description: Optional[str] = None, _test_session: Optional[Session] = None) -> str:
-    """Creates a new todo item in the database.
+def _create_todo_impl(
+    title: str,
+    description: Optional[str] = None,
+    due_date: Optional[datetime] = None,
+    priority: TodoPriority = TodoPriority.MEDIUM,
+    tags: Optional[List[str]] = None,
+    _test_session: Optional[Session] = None
+) -> str:
+    """Internal implementation of create_todo with test session support.
 
-    This tool creates a new todo with the provided title and optional description.
+    This tool creates a new todo with the provided details.
     The todo is automatically assigned an active status and timestamps are
     auto-generated.
 
     Args:
         title: Todo title (required, max 200 chars, whitespace will be stripped)
         description: Optional todo description (max 2000 chars)
+        due_date: Optional due date/time (ISO 8601 datetime, UTC)
+        priority: Priority level (low/medium/high, default: medium)
+        tags: Optional list of category tags
         _test_session: Internal parameter for dependency injection during testing
 
     Returns:
@@ -37,19 +47,26 @@ def create_todo(title: str, description: Optional[str] = None, _test_session: Op
     Raises:
         ValueError: If title is empty/whitespace-only or exceeds max length
         ValueError: If description exceeds max length
+        ValueError: If tags contain invalid values
         Exception: If database operation fails
 
     Examples:
         >>> create_todo("Buy groceries")
-        "Todo created successfully! ID: 1, Title: 'Buy groceries', Status: active"
+        "Todo created successfully! ID: 1, Title: 'Buy groceries', Status: active, Priority: medium"
 
-        >>> create_todo("Call dentist", "Schedule annual checkup")
-        "Todo created successfully! ID: 2, Title: 'Call dentist', Status: active"
+        >>> create_todo("Call dentist", "Schedule annual checkup", priority="high")
+        "Todo created successfully! ID: 2, Title: 'Call dentist', Status: active, Priority: high"
     """
     # Validate input using Pydantic schema
     # This will raise ValueError if validation fails
     try:
-        validated_input = CreateTodoInput(title=title, description=description)
+        validated_input = CreateTodoInput(
+            title=title,
+            description=description,
+            due_date=due_date,
+            priority=priority,
+            tags=tags
+        )
     except Exception as e:
         # Re-raise validation errors with clear message
         raise ValueError(f"Validation error: {str(e)}")
@@ -64,6 +81,9 @@ def create_todo(title: str, description: Optional[str] = None, _test_session: Op
             todo = Todo(
                 title=validated_input.title,
                 description=validated_input.description,
+                due_date=validated_input.due_date,
+                priority=validated_input.priority,
+                tags=validated_input.tags,
                 status=TodoStatus.ACTIVE,  # New todos are always active
                 created_at=datetime.now(timezone.utc),
                 updated_at=datetime.now(timezone.utc)
@@ -74,13 +94,23 @@ def create_todo(title: str, description: Optional[str] = None, _test_session: Op
             session.commit()
             session.refresh(todo)  # Refresh to get auto-generated ID
 
-            # Return MCP-compliant response (FastMCP converts string to Content object)
-            return (
-                f"Todo created successfully! "
-                f"ID: {todo.id}, "
-                f"Title: '{todo.title}', "
-                f"Status: {todo.status.value}"
-            )
+            # Build success message with all relevant details
+            response_parts = [
+                f"Todo created successfully!",
+                f"ID: {todo.id}",
+                f"Title: '{todo.title}'",
+                f"Status: {todo.status.value}",
+                f"Priority: {todo.priority.value}"
+            ]
+
+            if todo.due_date:
+                response_parts.append(f"Due: {todo.due_date.isoformat()}")
+
+            if todo.tags:
+                tags_str = ", ".join(todo.tags)
+                response_parts.append(f"Tags: {tags_str}")
+
+            return ", ".join(response_parts)
 
         except IntegrityError as e:
             # Rollback on integrity error (unique constraint, foreign key, etc.)
@@ -100,6 +130,9 @@ def create_todo(title: str, description: Optional[str] = None, _test_session: Op
                 todo = Todo(
                     title=validated_input.title,
                     description=validated_input.description,
+                    due_date=validated_input.due_date,
+                    priority=validated_input.priority,
+                    tags=validated_input.tags,
                     status=TodoStatus.ACTIVE,  # New todos are always active
                     created_at=datetime.now(timezone.utc),
                     updated_at=datetime.now(timezone.utc)
@@ -110,13 +143,23 @@ def create_todo(title: str, description: Optional[str] = None, _test_session: Op
                 session.commit()
                 session.refresh(todo)  # Refresh to get auto-generated ID
 
-                # Return MCP-compliant response (FastMCP converts string to Content object)
-                return (
-                    f"Todo created successfully! "
-                    f"ID: {todo.id}, "
-                    f"Title: '{todo.title}', "
-                    f"Status: {todo.status.value}"
-                )
+                # Build success message with all relevant details
+                response_parts = [
+                    f"Todo created successfully!",
+                    f"ID: {todo.id}",
+                    f"Title: '{todo.title}'",
+                    f"Status: {todo.status.value}",
+                    f"Priority: {todo.priority.value}"
+                ]
+
+                if todo.due_date:
+                    response_parts.append(f"Due: {todo.due_date.isoformat()}")
+
+                if todo.tags:
+                    tags_str = ", ".join(todo.tags)
+                    response_parts.append(f"Tags: {tags_str}")
+
+                return ", ".join(response_parts)
 
             except IntegrityError as e:
                 # Rollback on integrity error (unique constraint, foreign key, etc.)
@@ -128,16 +171,35 @@ def create_todo(title: str, description: Optional[str] = None, _test_session: Op
                 raise Exception(f"Database error while creating todo: {str(e)}")
 
 
-# Create MCP tool wrapper that excludes test parameter
+# MCP tool wrapper that calls internal implementation without test parameter
 @mcp.tool
-def create_todo_mcp(title: str, description: Optional[str] = None) -> str:
+def create_todo(
+    title: str,
+    description: Optional[str] = None,
+    due_date: Optional[datetime] = None,
+    priority: str = "medium",
+    tags: Optional[List[str]] = None
+) -> str:
     """Creates a new todo item in the database.
 
     Args:
         title: Todo title (required, max 200 chars)
         description: Optional todo description (max 2000 chars)
+        due_date: Optional due date/time (ISO 8601 datetime string, UTC)
+        priority: Priority level - "low", "medium" (default), or "high"
+        tags: Optional list of category tags (e.g., ["work", "urgent"])
 
     Returns:
-        str: Success message with created todo details
+        str: Success message with created todo details including ID, title, status, priority, due date, and tags
     """
-    return create_todo(title=title, description=description, _test_session=None)
+    # Convert string priority to enum
+    priority_enum = TodoPriority(priority.lower())
+
+    return _create_todo_impl(
+        title=title,
+        description=description,
+        due_date=due_date,
+        priority=priority_enum,
+        tags=tags,
+        _test_session=None
+    )

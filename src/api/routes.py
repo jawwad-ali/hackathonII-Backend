@@ -6,24 +6,81 @@ Implements the ChatKit streaming endpoint for natural language todo operations.
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from typing import AsyncGenerator, Any
+from typing import AsyncGenerator, Any, List, Optional
 import logging
 import time
 import uuid
 
 from agents import Runner
+from agents.mcp import MCPServerStdio
 
 from src.api.schemas import ChatRequest, ErrorResponse
 from src.streaming.chatkit import StreamBuilder, ErrorType, ToolStatus, map_agent_event_to_chatkit
 from src.agents.todo_agent import create_todo_agent
-from src.mcp.client import get_runner_context, discover_mcp_tools
 from src.observability.metrics import metrics_tracker
+from src.observability.logging import set_thread_id  # T031: Import for context metadata
 from src.resilience.circuit_breaker import CircuitBreakerError
 
 logger = logging.getLogger(__name__)
 
 # Create API router
 router = APIRouter(prefix="/chat", tags=["chat"])
+
+
+async def initialize_agent_with_mcp(mcp_server: Optional[MCPServerStdio]):
+    """
+    Initialize TodoAgent with MCP server connection from app.state.
+
+    This function creates the TodoAgent and passes the MCP server instance
+    for manual tool discovery and registration.
+
+    T013: Agent initialization function that uses app.state.mcp_server
+
+    Args:
+        mcp_server: MCPServerStdio instance from app.state.mcp_server, or None
+                   if MCP connection failed (degraded mode)
+
+    Returns:
+        Agent: Configured TodoAgent with MCP tools (if mcp_server is not None)
+               or without tools (if mcp_server is None for degraded mode)
+
+    Example:
+        >>> # In endpoint handler
+        >>> from fastapi import Request
+        >>> mcp_server = request.app.state.mcp_server
+        >>> agent = await initialize_agent_with_mcp(mcp_server)
+        >>> # Agent now has access to all discovered MCP tools
+    """
+    # Build list of MCP servers for agent initialization
+    # If mcp_server is None (degraded mode), agent will be created without tools
+    mcp_servers: List[MCPServerStdio] = []
+
+    if mcp_server is not None:
+        mcp_servers.append(mcp_server)
+
+        logger.info(
+            "Initializing TodoAgent with MCP server connection",
+            extra={
+                "mcp_server_name": "TodoDatabaseServer",
+                "mcp_servers_count": 1,
+                "degraded_mode": False
+            }
+        )
+    else:
+        logger.warning(
+            "Initializing TodoAgent in degraded mode - no MCP server available",
+            extra={
+                "mcp_servers_count": 0,
+                "degraded_mode": True
+            }
+        )
+
+    # Create TodoAgent with MCP servers (or empty list for degraded mode)
+    # The create_todo_agent function handles None/empty list gracefully
+    # Now async to support manual tool discovery
+    agent = await create_todo_agent(mcp_servers=mcp_servers if mcp_servers else None)
+
+    return agent
 
 
 def format_todo_list(todos: Any) -> str:
@@ -130,17 +187,24 @@ def format_todo_list(todos: Any) -> str:
 
 async def chat_stream_generator(
     message: str,
-    request_id: str
+    request_id: str,
+    mcp_server: Optional[MCPServerStdio],
+    context_metadata: Optional[dict] = None
 ) -> AsyncGenerator[str, None]:
     """
     Async generator that yields SSE events for the chat stream.
 
-    Calls Runner.run_streamed() with TodoAgent and MCP context to execute
+    Calls Runner.run_streamed() with TodoAgent to execute
     natural language todo operations and stream the results in ChatKit format.
+
+    T013: Uses mcp_server from app.state to initialize agent with MCP tools
+    T030: Accepts context_metadata for observability (request_id, thread_id, timestamp)
 
     Args:
         message: Sanitized user message from ChatRequest
         request_id: Request ID for correlation and logging
+        mcp_server: MCPServerStdio instance from app.state.mcp_server (or None for degraded mode)
+        context_metadata: Optional dict with request_id, thread_id, timestamp for observability
 
     Yields:
         SSE formatted event strings (thinking, tool_call, response_delta, error, done)
@@ -186,11 +250,27 @@ async def chat_stream_generator(
     detected_intent = None
 
     try:
-        # Log request received
+        # T031: Use context_metadata for logging throughout execution
+        # Default context if not provided
+        if context_metadata is None:
+            context_metadata = {
+                "request_id": request_id,
+                "thread_id": f"thread_{uuid.uuid4()}",
+                "timestamp": time.time()
+            }
+
+        # T031: Set thread_id in logging context for automatic injection into all logs
+        thread_id = context_metadata.get("thread_id")
+        if thread_id:
+            set_thread_id(thread_id)
+
+        # Log request received with full context metadata
         logger.info(
             f"Chat stream started",
             extra={
-                "request_id": request_id,
+                "request_id": context_metadata.get("request_id", request_id),
+                "thread_id": thread_id,
+                "timestamp": context_metadata.get("timestamp"),
                 "message_length": len(message)
             }
         )
@@ -241,27 +321,62 @@ async def chat_stream_generator(
                 }
             )
 
-        # Initialize MCP context and discover tools
-        # Fix: get_runner_context() returns a coroutine and must be awaited
-        context = await get_runner_context()
-        mcp_servers = await discover_mcp_tools(context)
+        # T014: Check if MCP server is available (degraded mode check)
+        # Per FR-010 and SC-013: Return HTTP 200 with user-friendly error (not 503)
+        if mcp_server is None:
+            logger.warning(
+                f"Request received in degraded mode - MCP server unavailable",
+                extra={
+                    "request_id": request_id,
+                    "degraded_mode": True
+                }
+            )
+
+            # Stream error event with degraded mode message
+            # Per SC-013: HTTP 200 with user-friendly error message in response body
+            degraded_message = (
+                "I'm currently unable to access the todo database due to a temporary service issue. "
+                "The todo management system is unavailable right now, but our team is working to restore it. "
+                "Please try again in a few moments."
+            )
+
+            yield stream_builder.add_error(
+                error_type=ErrorType.MCP_CONNECTION_ERROR,
+                message=degraded_message,
+                recoverable=True
+            )
+
+            # Send done event to close the stream gracefully
+            yield stream_builder.add_done(
+                final_output="Service temporarily unavailable",
+                success=False
+            )
+
+            # Log the degraded mode response
+            logger.info(
+                f"Degraded mode error returned to user",
+                extra={
+                    "request_id": request_id,
+                    "degraded_mode": True,
+                    "error_type": "MCP_CONNECTION_ERROR"
+                }
+            )
+
+            # Exit early - don't try to run the agent without MCP tools
+            return
+
+        # T013: Initialize TodoAgent with MCP server from app.state
+        # The initialize_agent_with_mcp function handles both normal and degraded mode
+        # Now async to support manual tool discovery
+        agent = await initialize_agent_with_mcp(mcp_server)
 
         logger.info(
-            f"MCP context initialized",
+            f"TodoAgent initialized",
             extra={
                 "request_id": request_id,
-                "mcp_servers": mcp_servers
-            }
-        )
-
-        # Create TodoAgent with MCP tools
-        agent = create_todo_agent(mcp_servers=mcp_servers)
-
-        logger.info(
-            f"TodoAgent created",
-            extra={
-                "request_id": request_id,
-                "agent_name": agent.name
+                "agent_name": agent.name,
+                "has_mcp_tools": True,
+                "tools_count": len(agent.tools) if hasattr(agent, 'tools') and agent.tools else 0
             }
         )
 
@@ -281,15 +396,22 @@ async def chat_stream_generator(
             )
 
         # Run agent with streaming
+        # T013: MCP tools are already registered with agent via mcp_servers parameter
+        # No separate context needed - the Agent handles MCP communication
         result = Runner.run_streamed(
-            agent=agent,
-            input=message,
-            context=context
+            agent,
+            message
         )
 
+        # T031: Include context metadata in all logging
         logger.info(
             f"Runner.run_streamed() initiated",
-            extra={"request_id": request_id}
+            extra={
+                "request_id": context_metadata.get("request_id", request_id),
+                "thread_id": context_metadata.get("thread_id"),
+                "timestamp": context_metadata.get("timestamp"),
+                "has_mcp_tools": mcp_server is not None
+            }
         )
 
         # Process stream events from OpenAI Agents SDK
@@ -764,9 +886,9 @@ async def chat_stream_generator(
             if sse_event:
                 yield sse_event
 
-        # Get final result
-        final_result = result.result()
-
+        # Get final output from the streamed result
+        # Note: final_output is a property, not a method
+        final_result = result.final_output
         logger.info(
             f"Agent execution completed",
             extra={
@@ -779,7 +901,19 @@ async def chat_stream_generator(
         # The stream_builder.add_done() automatically includes tools_called list
         # For LIST operations, this will be ["list_todos"]
         # For CREATE operations, this will be ["create_todo"]
-        final_output = stream_builder.accumulated_text or "Request processed successfully."
+        # Prefer streamed accumulated text, but fall back to the agent's final_output if no deltas were emitted.
+        final_output = stream_builder.accumulated_text
+        if not final_output:
+            if isinstance(final_result, str) and final_result.strip():
+                final_output = final_result.strip()
+            elif final_result is not None:
+                final_output = str(final_result)
+            else:
+                final_output = "Request processed successfully."
+
+            # Ensure clients that rely on RESPONSE_DELTA still receive the final text.
+            if final_output:
+                yield stream_builder.add_response_delta(final_output)
         yield stream_builder.add_done(
             final_output=final_output,
             success=True
@@ -1053,17 +1187,22 @@ async def chat_stream_generator(
     - response_delta: Incremental response text
     - error: Error events with recovery information
     - done: Final event indicating stream completion
+
+    T013: Uses app.state.mcp_server for agent initialization with MCP tools
     """,
 )
-async def stream_chat(request: ChatRequest) -> StreamingResponse:
+async def stream_chat(chat_request: ChatRequest, request: Request) -> StreamingResponse:
     """
     POST /chat/stream endpoint for natural language todo operations.
 
     This endpoint implements the ChatKit streaming protocol, converting natural
     language requests into structured MCP tool calls via the TodoAgent.
 
+    T013: Retrieves app.state.mcp_server and passes to agent initialization
+
     Args:
-        request: ChatRequest containing the user's message and optional request_id
+        chat_request: ChatRequest containing the user's message and optional request_id
+        request: FastAPI Request object (for accessing app.state)
 
     Returns:
         StreamingResponse: SSE stream with media_type="text/event-stream"
@@ -1089,23 +1228,51 @@ async def stream_chat(request: ChatRequest) -> StreamingResponse:
             event: done
             data: {"final_output": "...", "tools_called": ["create_todo"], "success": true}
     """
-    # Generate or use provided request ID
-    request_id = request.request_id or str(uuid.uuid4())
+    # T030: Extract context metadata from ChatRequest
+    # Generate request_id if not provided
+    request_id = chat_request.request_id or str(uuid.uuid4())
+
+    # Generate thread_id if not provided (for conversation tracking)
+    thread_id = chat_request.thread_id or f"thread_{uuid.uuid4()}"
+
+    # Create context metadata dictionary for observability
+    context_metadata = {
+        "request_id": request_id,
+        "thread_id": thread_id,
+        "timestamp": time.time()
+    }
 
     logger.info(
         f"Received chat stream request",
         extra={
             "request_id": request_id,
-            "message_preview": request.message[:50] + "..." if len(request.message) > 50 else request.message
+            "thread_id": thread_id,
+            "message_preview": chat_request.message[:50] + "..." if len(chat_request.message) > 50 else chat_request.message
         }
     )
 
     try:
+        # T013: Get MCP server instance from app.state
+        # This will be None if MCP connection failed during startup (degraded mode)
+        mcp_server = getattr(request.app.state, 'mcp_server', None)
+
+        if mcp_server is None:
+            logger.warning(
+                f"MCP server not available - degraded mode",
+                extra={
+                    "request_id": request_id,
+                    "degraded_mode": True
+                }
+            )
+
         # Create the streaming response
+        # T030: Pass context_metadata to generator for observability
         return StreamingResponse(
             chat_stream_generator(
-                message=request.message,
-                request_id=request_id
+                message=chat_request.message,
+                request_id=request_id,
+                mcp_server=mcp_server,
+                context_metadata=context_metadata
             ),
             media_type="text/event-stream",
             headers={

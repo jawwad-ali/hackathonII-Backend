@@ -9,11 +9,17 @@ State Machine:
 - CLOSED: Normal operation, requests pass through
 - OPEN: Failures exceeded threshold, fail fast without calling service
 - HALF-OPEN: Testing if service recovered, limited requests allowed
+
+T022: Integrated proper logging for circuit breaker state transitions
 """
 
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
+import logging
+
+# T022: Initialize logger for circuit breaker state transition logging
+logger = logging.getLogger(__name__)
 
 
 class CircuitState(str, Enum):
@@ -222,23 +228,51 @@ class CircuitBreaker:
     ) -> None:
         """Log circuit breaker state change for monitoring
 
+        T022: Properly logs state transitions (CLOSED → OPEN → HALF-OPEN → CLOSED)
+        using structured logging with context information.
+
         Args:
             old_state: Previous circuit state
             new_state: New circuit state
             error: Optional error that triggered the change
         """
-        # TODO: Integrate with structured logging in Phase 6
-        # For now, this is a placeholder for future logging integration
+        # T022: Use proper structured logging for circuit breaker state transitions
         log_data = {
             "event": "circuit_breaker_state_change",
             "service": self.name,
             "old_state": old_state.value,
             "new_state": new_state.value,
             "failure_count": self.state.failure_count,
-            "last_error": str(error) if error else None
+            "last_error": str(error) if error else None,
+            "timestamp": datetime.utcnow().isoformat()
         }
-        # Will be replaced with proper structured logger
-        print(f"[CircuitBreaker] {log_data}")
+
+        # T022: Log at appropriate level based on state transition
+        # OPEN transitions are warnings (service degraded)
+        # HALF-OPEN and CLOSED transitions are info (recovery attempts/success)
+        if new_state == CircuitState.OPEN:
+            logger.warning(
+                f"Circuit breaker '{self.name}' opened: {old_state.value} → {new_state.value}",
+                extra=log_data
+            )
+        elif new_state == CircuitState.HALF_OPEN:
+            logger.info(
+                f"Circuit breaker '{self.name}' attempting recovery: {old_state.value} → {new_state.value}",
+                extra=log_data
+            )
+        elif new_state == CircuitState.CLOSED:
+            if old_state != CircuitState.CLOSED:
+                # Log recovery success
+                logger.info(
+                    f"Circuit breaker '{self.name}' recovered: {old_state.value} → {new_state.value}",
+                    extra=log_data
+                )
+            else:
+                # Initial state or reset
+                logger.debug(
+                    f"Circuit breaker '{self.name}' state change: {old_state.value} → {new_state.value}",
+                    extra=log_data
+                )
 
     def _record_success(self) -> None:
         """Record successful operation and update state accordingly"""
