@@ -46,8 +46,8 @@ class CircuitBreakerConfig:
             half_open_max_calls=3
         )
 
-        # Gemini API configuration (less tolerant due to rate limits)
-        gemini_config = CircuitBreakerConfig(
+        # Groq API configuration (less tolerant due to rate limits)
+        groq_config = CircuitBreakerConfig(
             failure_threshold=3,
             recovery_timeout=timedelta(seconds=60),
             half_open_max_calls=2

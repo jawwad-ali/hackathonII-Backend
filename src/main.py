@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 import time
 
 # Import configuration
-from src.config import settings, get_gemini_circuit_breaker
+from src.config import settings, get_groq_circuit_breaker
 
 # Import MCP client for circuit breaker access and initialization
 from src.mcp.client import get_mcp_circuit_breaker, initialize_mcp_connection, get_discovered_tools
@@ -145,7 +145,7 @@ async def lifespan(app: FastAPI):
 # Initialize FastAPI application
 app = FastAPI(
     title="AI Agent Orchestrator",
-    description="Natural language interface for todo management using OpenAI Agents SDK with Gemini",
+    description="Natural language interface for todo management using OpenAI Agents SDK with Groq/Llama",
     version="0.1.0",
     lifespan=lifespan,
 )
@@ -186,7 +186,7 @@ async def health_check(response: Response):
             - status: "healthy" | "degraded" | "unhealthy"
             - timestamp: Current server time (ISO 8601 UTC)
             - uptime_seconds: Time since service started
-            - circuit_breakers: MCP and Gemini circuit breaker states
+            - circuit_breakers: MCP and Groq circuit breaker states
             - metrics: Request statistics
 
     Status Codes:
@@ -197,11 +197,11 @@ async def health_check(response: Response):
     """
     # Get circuit breaker instances
     mcp_breaker = get_mcp_circuit_breaker()
-    gemini_breaker = get_gemini_circuit_breaker()
+    groq_breaker = get_groq_circuit_breaker()
 
     # Get circuit breaker states
     mcp_state = mcp_breaker.get_state()
-    gemini_state = gemini_breaker.get_state()
+    groq_state = groq_breaker.get_state()
 
     # Calculate uptime
     uptime_seconds = int(time.time() - _startup_time)
@@ -218,7 +218,7 @@ async def health_check(response: Response):
     # Build circuit breaker status dict
     circuit_breakers = {
         "mcp_server": breaker_state_to_dict(mcp_state),
-        "gemini_api": breaker_state_to_dict(gemini_state)
+        "groq_api": breaker_state_to_dict(groq_state)
     }
 
     # Determine overall health status
@@ -226,11 +226,11 @@ async def health_check(response: Response):
     # - degraded: One circuit breaker open
     # - unhealthy: Both circuit breakers open
     mcp_open = mcp_state.state.value == "open"
-    gemini_open = gemini_state.state.value == "open"
+    groq_open = groq_state.state.value == "open"
 
-    if mcp_open and gemini_open:
+    if mcp_open and groq_open:
         status = "unhealthy"
-    elif mcp_open or gemini_open:
+    elif mcp_open or groq_open:
         status = "degraded"
     else:
         status = "healthy"
@@ -257,8 +257,8 @@ async def health_check(response: Response):
 
     # T008: Updated health check per spec requirements (FR-010, SC-013)
     # - HTTP 200 with status="healthy": All services operational
-    # - HTTP 200 with status="degraded": MCP down but Gemini available (graceful degradation)
-    # - HTTP 200 with status="degraded": Gemini down but MCP available (rare case)
+    # - HTTP 200 with status="degraded": MCP down but Groq available (graceful degradation)
+    # - HTTP 200 with status="degraded": Groq down but MCP available (rare case)
     # - HTTP 200 with status="unhealthy": Both down (app still responds for monitoring)
     #
     # Always return HTTP 200 to indicate the app is responding.
@@ -272,7 +272,7 @@ async def health_check(response: Response):
             extra={
                 "status": status,
                 "mcp_state": mcp_state.state.value,
-                "gemini_state": gemini_state.state.value
+                "groq_state": groq_state.state.value
             }
         )
     elif status == "degraded":
@@ -281,7 +281,7 @@ async def health_check(response: Response):
             extra={
                 "status": status,
                 "mcp_state": mcp_state.state.value,
-                "gemini_state": gemini_state.state.value
+                "groq_state": groq_state.state.value
             }
         )
 

@@ -1,7 +1,7 @@
 ﻿# Claude Code Instructions - AI Agent Orchestrator
 
 > **Project**: AI Agent Orchestrator for Todo Management
-> **Stack**: FastAPI + Gemini 2.5 Flash + PostgreSQL + FastMCP
+> **Stack**: FastAPI + Llama 3.3 (via Groq) + PostgreSQL + FastMCP
 > **Version**: 1.0.0
 
 ## Project Overview
@@ -12,7 +12,7 @@ An AI-powered todo management system using natural language interface. Connects 
 
 **Core Technologies:**
 - **Backend**: FastAPI 0.115+ (async Python web framework)
-- **LLM Provider**: Google Gemini 2.5 Flash (via OpenAI SDK bridge)
+- **LLM Provider**: Groq (running Llama 3.3 70B Versatile via OpenAI SDK bridge)
 - **AI Framework**: OpenAI Agents SDK 0.6.4+, FastMCP 0.0.8+
 - **Database**: PostgreSQL + SQLModel (Pydantic + SQLAlchemy ORM)
 - **Package Manager**: uv (fast Python package installer)
@@ -35,7 +35,7 @@ FastAPI Endpoints (/chat/stream)
     ↓
 OpenAI Agents SDK (orchestration)
     ↓
-Gemini 2.5 Flash (intent parsing)
+Llama 3.3 70B via Groq (intent parsing)
     ↓
 FastMCP Tools (CRUD operations)
     ↓
@@ -45,7 +45,7 @@ PostgreSQL (persistence)
 **Key Components:**
 - `src/main.py` - FastAPI application, middleware, health checks
 - `src/config.py` - Pydantic settings, circuit breaker config
-- `src/agents/todo_agent.py` - Main orchestrator agent
+- `src/orchestrators/todo_agent.py` - Main orchestrator agent
 - `src/mcp_server/` - FastMCP server and tool implementations
 - `src/resilience/` - Circuit breaker, retry patterns
 - `src/observability/` - Structured logging, metrics tracking
@@ -148,7 +148,7 @@ uv run python -m src.mcp_server.server
 ```
 ┌──────────────────────────────┐
 │  AI Agent                    │
-│  (Gemini 2.5 Flash)          │
+│  (Llama 3.3 via Groq)        │
 │  + OpenAI Agents SDK         │
 └──────────┬───────────────────┘
            │
@@ -177,16 +177,16 @@ mcp_process = subprocess.Popen(
     stderr=subprocess.PIPE
 )
 
-# 2. Configure Gemini client
+# 2. Configure Groq client
 client = AsyncOpenAI(
-    api_key=os.getenv("GEMINI_API_KEY"),
-    base_url=os.getenv("GEMINI_BASE_URL"),
+    api_key=os.getenv("GROQ_API_KEY"),
+    base_url=os.getenv("GROQ_BASE_URL"),
 )
 
 # 3. Create agent with MCP tools
 agent = Agent(
     name="TodoAgent",
-    model="gemini-2.5-flash",
+    model="llama-3.3-70b-versatile",
     instructions="You are a todo management assistant...",
     # MCP tools auto-discovered via stdio protocol
 )
@@ -359,21 +359,21 @@ mcp__context7__query-docs(
 - ✅ ALWAYS fetch current docs before implementation
 - Document findings in planning artifacts
 
-### 4. Gemini-Only Model Policy ⚠️
+### 4. Groq-Only Model Policy ⚠️
 
-**OpenAI models are PROHIBITED.** Use Gemini via AsyncOpenAI bridge.
+**OpenAI models are PROHIBITED.** Use Llama via Groq's AsyncOpenAI bridge.
 
 ```python
 # ✅ CORRECT
 from openai import AsyncOpenAI
 
 client = AsyncOpenAI(
-    api_key=os.getenv("GEMINI_API_KEY"),
-    base_url=os.getenv("GEMINI_BASE_URL"),
+    api_key=os.getenv("GROQ_API_KEY"),
+    base_url=os.getenv("GROQ_BASE_URL"),
 )
 
 response = await client.chat.completions.create(
-    model="gemini-2.5-flash",  # Primary model
+    model="llama-3.3-70b-versatile",  # Primary model
     messages=[...],
     tools=[...]
 )
@@ -381,11 +381,12 @@ response = await client.chat.completions.create(
 # ❌ WRONG
 model="gpt-4"
 model="gpt-3.5-turbo"
+model="gemini-2.5-flash"
 ```
 
 **Models:**
-- Primary: `gemini-2.5-flash` (low latency, cost-effective)
-- Escalation: `gemini-2.5-pro` (complex reasoning, requires approval)
+- Primary: `llama-3.3-70b-versatile` (high performance, best for complex tasks)
+- Alternative: `llama-3.1-8b-instant` (low latency, faster responses)
 
 ### 5. Security & Secrets
 
@@ -412,7 +413,7 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 ### Resilience Patterns
 
 **Circuit Breaker:**
-- Prevents cascading failures for MCP server and Gemini API
+- Prevents cascading failures for MCP server and Groq API
 - States: CLOSED (normal) → OPEN (fail-fast) → HALF-OPEN (testing)
 - Configurable thresholds and recovery timeouts
 - Integrated in health check endpoints
@@ -428,7 +429,7 @@ from src.resilience.circuit_breaker import CircuitBreaker, CircuitBreakerConfig
 from datetime import timedelta
 
 breaker = CircuitBreaker(
-    name="gemini_api",
+    name="groq_api",
     config=CircuitBreakerConfig(
         failure_threshold=3,
         recovery_timeout=timedelta(seconds=60)
@@ -452,7 +453,7 @@ result = await breaker.call(api_function, *args)
 
 **Health Checks:**
 - `/health` endpoint with detailed status
-- Circuit breaker states (MCP, Gemini)
+- Circuit breaker states (MCP, Groq)
 - Uptime metrics
 - Returns 503 when both circuit breakers open
 
@@ -651,10 +652,10 @@ uvx fastmcp run src/mcp_server/server.py
 # Database
 DATABASE_URL=postgresql://user:password@host:5432/db?sslmode=require
 
-# Gemini API
-GEMINI_API_KEY=your_gemini_api_key_here
-GEMINI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
-GEMINI_MODEL=gemini-2.5-flash
+# Groq API (Llama)
+GROQ_API_KEY=your_groq_api_key_here
+GROQ_BASE_URL=https://api.groq.com/openai/v1
+GROQ_MODEL=llama-3.3-70b-versatile
 
 # Application
 APP_HOST=0.0.0.0
@@ -664,8 +665,8 @@ LOG_LEVEL=INFO
 # Circuit Breaker
 CIRCUIT_BREAKER_MCP_FAILURE_THRESHOLD=5
 CIRCUIT_BREAKER_MCP_RECOVERY_TIMEOUT=30
-CIRCUIT_BREAKER_GEMINI_FAILURE_THRESHOLD=3
-CIRCUIT_BREAKER_GEMINI_RECOVERY_TIMEOUT=60
+CIRCUIT_BREAKER_GROQ_FAILURE_THRESHOLD=3
+CIRCUIT_BREAKER_GROQ_RECOVERY_TIMEOUT=60
 
 # Performance
 MAX_INPUT_LENGTH=5000

@@ -13,7 +13,7 @@ from typing import Optional
 from sqlmodel import Session, select
 
 from src.mcp_server.database import engine
-from src.mcp_server.models import Todo, TodoStatus
+from src.mcp_server.models import Todo, TodoStatus, TodoPriority
 from src.mcp_server.schemas import UpdateTodoInput
 from src.mcp_server.server import mcp
 
@@ -23,6 +23,7 @@ def _update_todo_impl(
     title: Optional[str] = None,
     description: Optional[str] = None,
     status: Optional[str] = None,
+    priority: Optional[str] = None,
     _test_session: Optional[Session] = None
 ) -> str:
     """Updates an existing todo item in the database.
@@ -36,6 +37,7 @@ def _update_todo_impl(
         title: New title (optional, max 200 chars, whitespace will be stripped)
         description: New description (optional, max 2000 chars, use empty string to clear)
         status: New status (optional, must be "active", "completed", or "archived")
+        priority: New priority (optional, must be "low", "medium", or "high")
         _test_session: Internal parameter for dependency injection during testing
 
     Returns:
@@ -46,6 +48,7 @@ def _update_todo_impl(
         ValueError: If title is empty/whitespace-only or exceeds max length
         ValueError: If description exceeds max length
         ValueError: If status is not a valid enum value
+        ValueError: If priority is not a valid enum value
         Exception: If database operation fails
 
     Examples:
@@ -55,17 +58,27 @@ def _update_todo_impl(
         >>> update_todo(1, status="completed")
         "Todo updated successfully! ID: 1, Title: 'Buy groceries', Status: completed"
 
-        >>> update_todo(1, title="New title", description="New description", status="archived")
-        "Todo updated successfully! ID: 1, Title: 'New title', Status: archived"
+        >>> update_todo(1, priority="high")
+        "Todo updated successfully! ID: 1, Title: 'Buy groceries', Priority: high"
     """
     # Convert string status to TodoStatus enum if provided
     status_enum = None
     if status is not None:
         try:
-            status_enum = TodoStatus(status)
+            status_enum = TodoStatus(status.lower())
         except ValueError:
             raise ValueError(
                 f"Invalid status '{status}'. Must be one of: active, completed, archived"
+            )
+
+    # Convert string priority to TodoPriority enum if provided
+    priority_enum = None
+    if priority is not None:
+        try:
+            priority_enum = TodoPriority(priority.lower())
+        except ValueError:
+            raise ValueError(
+                f"Invalid priority '{priority}'. Must be one of: low, medium, high"
             )
 
     # Validate input using Pydantic schema
@@ -105,6 +118,9 @@ def _update_todo_impl(
             if validated_input.status is not None:
                 todo.status = validated_input.status
 
+            if priority_enum is not None:
+                todo.priority = priority_enum
+
             # Always update the updated_at timestamp
             todo.updated_at = datetime.now(timezone.utc)
 
@@ -118,6 +134,7 @@ def _update_todo_impl(
                 f"Todo updated successfully! "
                 f"ID: {todo.id}, "
                 f"Title: '{todo.title}', "
+                f"Priority: {todo.priority.value}, "
                 f"Status: {todo.status.value}"
             )
 
@@ -152,6 +169,9 @@ def _update_todo_impl(
                 if validated_input.status is not None:
                     todo.status = validated_input.status
 
+                if priority_enum is not None:
+                    todo.priority = priority_enum
+
                 # Always update the updated_at timestamp
                 todo.updated_at = datetime.now(timezone.utc)
 
@@ -165,6 +185,7 @@ def _update_todo_impl(
                     f"Todo updated successfully! "
                     f"ID: {todo.id}, "
                     f"Title: '{todo.title}', "
+                    f"Priority: {todo.priority.value}, "
                     f"Status: {todo.status.value}"
                 )
 
@@ -183,7 +204,8 @@ def update_todo(
     id: int,
     title: Optional[str] = None,
     description: Optional[str] = None,
-    status: Optional[str] = None
+    status: Optional[str] = None,
+    priority: Optional[str] = None
 ) -> str:
     """Updates an existing todo item in the database.
 
@@ -195,6 +217,7 @@ def update_todo(
         title: New title (optional, max 200 chars)
         description: New description (optional, max 2000 chars)
         status: New status (optional: "active", "completed", or "archived")
+        priority: New priority (optional: "low", "medium", or "high")
 
     Returns:
         str: Success message with updated todo details
@@ -204,5 +227,6 @@ def update_todo(
         title=title,
         description=description,
         status=status,
+        priority=priority,
         _test_session=None
     )

@@ -2,34 +2,42 @@
 Todo Agent Definition
 Defines the OpenAI Agents SDK agent for natural language todo management
 
-Includes circuit breaker and retry logic for Gemini API resilience.
+Includes circuit breaker and retry logic for Groq API resilience.
 """
 
 from agents import (
     Agent,
     set_default_openai_client,
+    set_tracing_disabled,
     OpenAIChatCompletionsModel,
+    function_tool,
+    ModelSettings,
 )
 from agents.mcp import MCPServerStdio
-from typing import List, Any, Dict, Optional
-from src.config import get_gemini_client, get_gemini_circuit_breaker
+from typing import List, Any, Dict, Optional, Literal, Union
+from src.config import get_groq_client, get_groq_circuit_breaker, settings
 from src.resilience.circuit_breaker import CircuitBreakerError
-from src.resilience.retry import gemini_retry
+from src.resilience.retry import groq_retry
 import logging
 
 logger = logging.getLogger(__name__)
 
 
-# Configure the OpenAI Agents SDK to use Gemini 2.0 Flash via AsyncOpenAI
-# This sets the default client for all agents created in this module
-gemini_client = get_gemini_client()
-set_default_openai_client(gemini_client)
+# Disable OpenAI tracing to prevent 401 errors when using Groq API
+# The OpenAI Agents SDK has built-in tracing that tries to send telemetry to OpenAI's servers
+# Since we're using Groq (not OpenAI), this would cause authentication failures
+set_tracing_disabled(True)
 
-# Create OpenAI Chat Completions Model for Gemini 2.0 Flash
-# Reference: https://ai.google.dev/gemini-api/docs/openai
-gemini_model = OpenAIChatCompletionsModel(
-    model="gemini-2.5-flash",
-    openai_client=gemini_client,
+# Configure the OpenAI Agents SDK to use Llama via Groq's AsyncOpenAI
+# This sets the default client for all agents created in this module
+groq_client = get_groq_client()
+set_default_openai_client(groq_client)
+
+# Create OpenAI Chat Completions Model for Llama 3.3 70B via Groq
+# Reference: https://console.groq.com/docs/models
+groq_model = OpenAIChatCompletionsModel(
+    model=settings.GROQ_MODEL,
+    openai_client=groq_client,
 )
 
 
@@ -327,6 +335,54 @@ Key behaviors:
 - "Clear overdue items" → list_todos(due_date_filter="overdue") → count=12 → REQUEST CONFIRMATION → delete each todo [MASS - requires confirmation]
 """
 
+TODO_AGENT_INSTRUCTIONS_COMPACT = """
+You are a todo management assistant. Convert the user's message into one or more tool calls, then respond concisely using the tool results.
+
+Available tools:
+- create_todo(title, description?, due_date?, priority?, tags?)
+- list_todos(status?, priority?, limit?, offset?) - status: active/completed/archived/all, priority: low/medium/high
+- update_todo(todo_id, title?, description?, status?, priority?) - status: active/completed/archived, priority: low/medium/high
+- search_todos(keyword)
+- delete_todo(todo_id?, todo_ids?, status?, priority?, keyword?, confirm?)
+
+Rules:
+- Always use tools for CRUD actions; never invent todos, IDs, or internal state.
+- If the user refers to a todo without an ID, use list_todos or search_todos first to find the right item.
+- Keep replies short and practical.
+
+CREATE extraction:
+- Title: required, short action phrase.
+- Description Extraction: optional details beyond the short title.
+- Due date: if provided, pass an ISO-8601 datetime string; otherwise omit.
+- Priority: infer low/medium/high; default medium.
+- Tags: extract hashtags or obvious categories; otherwise omit.
+- For CREATE operations, call create_todo with extracted: title, description (optional), due_date (optional), priority, tags (optional)
+
+LIST:
+- status: use "active" for active/pending/open, "completed" for completed/done/finished, "archived" for archived/cancelled, "all" for all.
+- priority: map to low/medium/high; if multiple priorities are requested, pass a list or a comma-separated string (e.g., "medium,high").
+- If no filters are specified, call list_todos() for active todos.
+- Examples: "What todos have I completed?" -> list_todos(status="completed"); "Show me active todos that are medium or high priority" -> list_todos(status="active", priority="medium,high").
+
+UPDATE:
+- Determine todo_id (list/search if needed), then update only requested fields.
+- status must be one of: active, completed, archived.
+- priority must be one of: low, medium, high.
+- Examples: "Mark task as completed" -> update_todo(todo_id=X, status="completed"); "Change to high priority" -> update_todo(todo_id=X, priority="high")
+
+DELETE:
+- delete_todo supports todo_id, todo_ids, status, priority, keyword, confirm.
+- If user specifies a todo by ID ("delete todo 5"), call delete_todo(todo_id=5).
+- If user specifies a todo by title/description, use delete_todo(keyword="...") or search_todos(keyword) -> delete_todo(todo_id=...).
+- For deleting by status/priority ("remove all completed", "clear archived"), call delete_todo(status="completed"/"archived", confirm=true if user explicitly says delete all/remove all/clear all).
+- For mass delete (3+ todos), set confirm=true only when the user explicitly confirms; otherwise ask for confirmation and wait.
+- Examples:
+  - "Delete the task about organizing my desk" -> delete_todo(keyword="organizing my desk")
+  - "Delete todo number 5" -> delete_todo(todo_id=5)
+  - "Remove all completed todos" -> delete_todo(status="completed", confirm=true)
+  - "Clear out all my archived tasks" -> delete_todo(status="archived", confirm=true)
+"""
+
 
 async def create_todo_agent(
     mcp_servers: Optional[List[MCPServerStdio]] = None,
@@ -340,7 +396,7 @@ async def create_todo_agent(
     - Conversational response generation
 
     MCP tools are registered dynamically when mcp_servers parameter is provided.
-    Due to Gemini API limitations with MCP protocol, tools are manually discovered
+    Due to Groq API limitations with MCP protocol, tools are manually discovered
     and registered as Function tools.
 
     Args:
@@ -362,107 +418,412 @@ async def create_todo_agent(
         >>> # Create agent without tools (for testing)
         >>> agent = await create_todo_agent()
     """
-    # Manually discover and register MCP tools
-    # This is needed because Gemini API bridge doesn't support automatic MCP tool discovery
-    discovered_tools = []
+    # NOTE: Groq uses the OpenAI ChatCompletions API, which does NOT support Hosted tools
+    # (including raw MCP `mcp.types.Tool` objects). We expose MCP tools to the model as
+    # Function tools that proxy to `MCPServerStdio.call_tool(...)`.
+    mcp_server: Optional[MCPServerStdio] = mcp_servers[0] if mcp_servers else None
 
-    if mcp_servers:
-        for server in mcp_servers:
-            try:
-                # List all available tools from the MCP server
-                tools_list = await server.list_tools()
-                logger.info(
-                    f"Listed {len(tools_list.tools) if tools_list and hasattr(tools_list, 'tools') else 0} tools from MCP server",
-                    extra={
-                        "mcp_server": (
-                            server.name if hasattr(server, "name") else "unknown"
-                        ),
-                        "tools_count": (
-                            len(tools_list.tools)
-                            if tools_list and hasattr(tools_list, "tools")
-                            else 0
-                        ),
-                    },
-                )
-
-                if tools_list and hasattr(tools_list, "tools"):
-                    discovered_tools.extend(tools_list.tools)
-
-            except Exception as e:
-                logger.error(
-                    f"Failed to list tools from MCP server: {e}",
-                    extra={"error": str(e)},
-                    exc_info=True,
-                )
-
-    # Create agent with both mcp_servers and discovered tools
-    # The mcp_servers parameter enables tool execution via MCP protocol
-    # The tools parameter makes them visible to the LLM (Gemini)
-    agent = Agent(
-        name="TodoAgent",
-        model=gemini_model,
-        instructions=TODO_AGENT_INSTRUCTIONS,
-        mcp_servers=mcp_servers or [],  # For tool execution
-        tools=discovered_tools,  # For LLM awareness
-    )
-
-    # T015: Log tool discovery with all discovered tool names
-    # Tools are manually discovered from MCP servers
-    discovered_tool_names = []
-
-    if discovered_tools:
-        # Extract tool names from the discovered tools
-        discovered_tool_names = [
-            tool.name if hasattr(tool, "name") else str(tool)
-            for tool in discovered_tools
-        ]
-
-        logger.info(
-            f"TodoAgent created with {len(mcp_servers) if mcp_servers else 0} MCP server(s) - "
-            f"Manually discovered {len(discovered_tool_names)} tools",
-            extra={
-                "mcp_servers_count": len(mcp_servers) if mcp_servers else 0,
-                "discovered_tools_count": len(discovered_tool_names),
-                "discovered_tools": discovered_tool_names,
-                "agent_name": "TodoAgent",
-            },
-        )
-
-        # T015: Log each discovered tool individually for detailed observability
-        for tool_name in discovered_tool_names:
-            logger.debug(
-                f"Tool discovered: {tool_name}",
+    discovered_tool_names: List[str] = []
+    if mcp_server is not None:
+        try:
+            tools_list = await mcp_server.list_tools()
+            discovered_tool_names = [t.name for t in tools_list if hasattr(t, "name")]
+            logger.info(
+                f"Listed {len(tools_list) if tools_list else 0} tools from MCP server",
                 extra={
-                    "tool_name": tool_name,
-                    "agent_name": "TodoAgent",
-                    "event": "tool_discovered",
+                    "mcp_server": getattr(mcp_server, "name", "unknown"),
+                    "tools_count": len(tools_list) if tools_list else 0,
+                    "tools": discovered_tool_names,
                 },
             )
-    else:
-        # No tools discovered (degraded mode or no MCP servers provided)
-        logger.info(
-            f"TodoAgent created with {len(mcp_servers) if mcp_servers else 0} MCP server(s) - "
-            f"No tools discovered (degraded mode)",
-            extra={
-                "mcp_servers_count": len(mcp_servers) if mcp_servers else 0,
-                "discovered_tools_count": 0,
-                "discovered_tools": [],
-                "agent_name": "TodoAgent",
-                "degraded_mode": True,
-            },
-        )
+        except Exception as e:
+            logger.error(
+                f"Failed to list tools from MCP server: {e}",
+                extra={"error": str(e)},
+                exc_info=True,
+            )
+
+    def _extract_mcp_result(result: Any) -> Any:
+        if isinstance(result, (dict, list, str)):
+            return result
+
+        structured = getattr(result, "structuredContent", None)
+        if structured is not None:
+            if isinstance(structured, dict) and "result" in structured:
+                return structured["result"]
+            return structured
+
+        content = getattr(result, "content", None)
+        if isinstance(content, list):
+            text_parts: List[str] = []
+            for part in content:
+                part_text = getattr(part, "text", None)
+                if isinstance(part_text, str) and part_text:
+                    text_parts.append(part_text)
+            if text_parts:
+                return "\n".join(text_parts)
+
+        return str(result)
+
+    async def _call_mcp_tool(tool_name: str, args: Dict[str, Any]) -> str:
+        if mcp_server is None:
+            raise ConnectionError("MCP server is not available (degraded mode)")
+
+        result = await mcp_server.call_tool(tool_name, args)
+
+        is_error = getattr(result, "isError", False)
+        payload = _extract_mcp_result(result)
+        if is_error:
+            raise RuntimeError(str(payload))
+        return payload
+
+    tools = []
+    if mcp_server is not None:
+        @function_tool(strict_mode=False)
+        async def create_todo(
+            title: str,
+            description: Optional[str] = None,
+            due_date: Optional[str] = None,
+            priority: str = "medium",
+            tags: Optional[List[str]] = None,
+        ) -> str:
+            """Create a new todo item.
+
+            Args:
+                title: The title/name of the todo (required)
+                description: Optional detailed description
+                due_date: Optional due date in ISO 8601 format
+                priority: Priority level - "low", "medium" (default), or "high"
+                tags: Optional list of tags/categories
+
+            Returns:
+                Success message with created todo details
+            """
+            return await _call_mcp_tool(
+                "create_todo",
+                {
+                    "title": title,
+                    "description": description,
+                    "due_date": due_date,
+                    "priority": priority,
+                    "tags": tags,
+                },
+            )
+
+        @function_tool(strict_mode=False)
+        async def list_todos(
+            status: Optional[str] = None,
+            priority: Optional[Union[str, List[str]]] = None,
+            limit: Optional[int] = None,
+            offset: Optional[int] = None,
+        ) -> Any:
+            """List todo items with optional filters.
+
+            By default (no filters), returns only active todos. Supports filtering by
+            status, priority, and pagination. All filters use AND logic.
+
+            Args:
+                status: Filter by status - "active", "completed", "archived", or "all"
+                priority: Filter by priority - "low", "medium", or "high" (single or list)
+                limit: Maximum number of results to return
+                offset: Number of results to skip for pagination
+
+            Returns:
+                Structured list of filtered todos
+            """
+            args = {
+                "status": status,
+                "priority": priority,
+                "limit": limit,
+                "offset": offset,
+            }
+            return await _call_mcp_tool(
+                "list_todos",
+                {key: value for key, value in args.items() if value is not None},
+            )
+
+        @function_tool(strict_mode=False)
+        async def update_todo(
+            todo_id: int,
+            title: Optional[str] = None,
+            description: Optional[str] = None,
+            status: Optional[str] = None,
+            priority: Optional[str] = None,
+        ) -> str:
+            """Update an existing todo item by ID.
+
+            Args:
+                todo_id: The ID of the todo to update (required)
+                title: New title for the todo (optional)
+                description: New description for the todo (optional)
+                status: New status - "active", "completed", or "archived" (optional)
+                priority: New priority - "low", "medium", or "high" (optional)
+
+            Returns:
+                Success message with updated todo details
+            """
+            # Build args dict, excluding None values
+            args = {
+                "id": todo_id,  # MCP tool expects "id" not "todo_id"
+                "title": title,
+                "description": description,
+                "status": status,
+                "priority": priority,
+            }
+            # Filter out None values to allow partial updates
+            args = {k: v for k, v in args.items() if v is not None}
+            return await _call_mcp_tool("update_todo", args)
+
+        @function_tool(strict_mode=False)
+        async def search_todos(keyword: str) -> Any:
+            """Search active todos by keyword in title or description.
+
+            Use this to find a todo when the user mentions it by name/title.
+            Returns a structured list with todo IDs which can be used with delete_todo or update_todo.
+            NOTE: Only searches ACTIVE todos. Use list_todos(status=...) for completed/archived.
+
+            Args:
+                keyword: Search term to match in title or description
+
+            Returns:
+                Structured list of matching todos with their IDs
+            """
+            return await _call_mcp_tool("search_todos", {"keyword": keyword})
+
+        @function_tool(strict_mode=False)
+        async def delete_todo(
+            todo_id: Optional[int] = None,
+            id: Optional[int] = None,
+            todo_ids: Optional[List[int]] = None,
+            status: Optional[str] = None,
+            priority: Optional[Union[str, List[str]]] = None,
+            keyword: Optional[str] = None,
+            confirm: Optional[bool] = None,
+        ) -> Any:
+            """Delete todos by ID or filter.
+
+            Supports single ID, multiple IDs, or filter-based deletion using
+            status/priority/keyword. For 3+ matches, returns a confirmation_required
+            response unless confirm=True is provided.
+
+            Args:
+                todo_id: Single todo ID to delete (preferred)
+                id: Alias for todo_id
+                todo_ids: List of todo IDs to delete
+                status: Filter by status ("active", "completed", "archived", "all")
+                priority: Filter by priority ("low", "medium", "high") or list
+                keyword: Substring match against title/description
+                confirm: Set true to confirm mass deletion
+
+            Returns:
+                Structured confirmation or confirmation_required response
+            """
+            def _coerce_int(value: Any) -> Optional[int]:
+                if isinstance(value, int):
+                    return value
+                if isinstance(value, str):
+                    stripped = value.strip()
+                    if stripped.isdigit():
+                        return int(stripped)
+                return None
+
+            def _extract_items(result: Any) -> List[Any]:
+                if isinstance(result, dict):
+                    items = result.get("todos")
+                    if isinstance(items, list):
+                        return items
+                    if "id" in result:
+                        return [result]
+                    return []
+                if isinstance(result, list):
+                    return result
+                return []
+
+            def _validate_list_result(result: Any) -> Any:
+                if isinstance(result, str) and result.strip().lower().startswith("error"):
+                    raise ValueError(result)
+                return result
+
+            def _extract_ids(items: List[Any]) -> List[int]:
+                ids: List[int] = []
+                for item in items:
+                    if isinstance(item, dict):
+                        raw_id = item.get("id")
+                    else:
+                        raw_id = getattr(item, "id", None)
+                    coerced = _coerce_int(raw_id)
+                    if coerced is not None:
+                        ids.append(coerced)
+                return ids
+
+            def _filter_ids_by_keyword(items: List[Any], keyword_value: str) -> List[int]:
+                keyword_lower = keyword_value.lower()
+                matched: List[int] = []
+                for item in items:
+                    if isinstance(item, dict):
+                        title = str(item.get("title", "") or "")
+                        description = str(item.get("description", "") or "")
+                        raw_id = item.get("id")
+                    else:
+                        title = str(getattr(item, "title", "") or "")
+                        description = str(getattr(item, "description", "") or "")
+                        raw_id = getattr(item, "id", None)
+                    if keyword_lower in title.lower() or keyword_lower in description.lower():
+                        coerced = _coerce_int(raw_id)
+                        if coerced is not None:
+                            matched.append(coerced)
+                return matched
+
+            resolved_ids: List[int] = []
+
+            if todo_id is None and id is not None:
+                todo_id = id
+
+            if todo_id is not None:
+                coerced = _coerce_int(todo_id)
+                if coerced is None:
+                    raise ValueError("todo_id must be an integer")
+                resolved_ids = [coerced]
+            elif todo_ids:
+                for item in todo_ids:
+                    coerced = _coerce_int(item)
+                    if coerced is not None:
+                        resolved_ids.append(coerced)
+
+            if not resolved_ids:
+                list_args: Dict[str, Any] = {}
+                if status:
+                    list_args["status"] = status
+                if priority:
+                    list_args["priority"] = priority
+
+                if keyword:
+                    if "status" not in list_args:
+                        list_args["status"] = "all"
+                    list_result = await _call_mcp_tool("list_todos", list_args)
+                    list_result = _validate_list_result(list_result)
+                    resolved_ids = _filter_ids_by_keyword(
+                        _extract_items(list_result),
+                        keyword,
+                    )
+                elif list_args:
+                    list_result = await _call_mcp_tool("list_todos", list_args)
+                    list_result = _validate_list_result(list_result)
+                    resolved_ids = _extract_ids(_extract_items(list_result))
+
+            if not resolved_ids:
+                return {
+                    "success": False,
+                    "deleted_id": None,
+                    "deleted_ids": [],
+                    "deleted_count": 0,
+                    "requested_count": 0,
+                    "message": "No todos matched the deletion criteria.",
+                }
+
+            if len(resolved_ids) >= 3 and not confirm:
+                return {
+                    "success": False,
+                    "confirmation_required": True,
+                    "deleted_id": None,
+                    "deleted_ids": [],
+                    "deleted_count": 0,
+                    "requested_count": len(resolved_ids),
+                    "message": (
+                        f"This will delete {len(resolved_ids)} todos. "
+                        "Please confirm to proceed."
+                    ),
+                }
+
+            deleted_ids: List[int] = []
+            errors: List[str] = []
+
+            for todo_id_value in resolved_ids:
+                try:
+                    result = await _call_mcp_tool("delete_todo", {"id": todo_id_value})
+                    success = True
+                    if isinstance(result, dict):
+                        success = result.get("success", True)
+                    if success:
+                        deleted_ids.append(todo_id_value)
+                    else:
+                        errors.append(f"Failed to delete todo {todo_id_value}")
+                except Exception as exc:
+                    errors.append(f"Todo {todo_id_value}: {exc}")
+
+            success = len(errors) == 0
+            if success:
+                if len(deleted_ids) == 1:
+                    message = f"Todo (ID: {deleted_ids[0]}) deleted."
+                else:
+                    message = f"Deleted {len(deleted_ids)} todos."
+            else:
+                if deleted_ids:
+                    message = (
+                        f"Deleted {len(deleted_ids)} todos; "
+                        f"{len(errors)} failed."
+                    )
+                else:
+                    message = "Failed to delete todos."
+
+            return {
+                "success": success,
+                "deleted_id": deleted_ids[0] if len(deleted_ids) == 1 else None,
+                "deleted_ids": deleted_ids,
+                "deleted_count": len(deleted_ids),
+                "requested_count": len(resolved_ids),
+                "errors": errors or None,
+                "message": message,
+            }
+
+        tools = [create_todo, list_todos, update_todo, search_todos, delete_todo]
+
+        # Align tool schema titles with tool names to prevent model confusion.
+        for tool in tools:
+            schema = getattr(tool, "params_json_schema", None)
+            if isinstance(schema, dict) and schema.get("title") != tool.name:
+                schema["title"] = tool.name
+
+    # Do NOT pass `mcp_servers` into the Agent when using ChatCompletions + Groq.
+    # The model can only see and call Function tools; MCP is used under the hood.
+    agent = Agent(
+        name="TodoAgent",
+        model=groq_model,
+        instructions=TODO_AGENT_INSTRUCTIONS_COMPACT,  # Use compact instructions (full might be too verbose for Groq)
+        tools=tools,
+        mcp_servers=[],
+        # Removed tool_use_behavior to allow all operations to complete properly
+        model_settings=ModelSettings(
+            max_tokens=settings.AGENT_MAX_OUTPUT_TOKENS,
+            parallel_tool_calls=False,
+        ),
+    )
+
+    logger.info(
+        f"TodoAgent created with {1 if mcp_server else 0} MCP server(s) - "
+        f"Registered {len(tools)} Function tool(s) for Groq",
+        extra={
+            "mcp_servers_count": 1 if mcp_server else 0,
+            "discovered_tools_count": len(discovered_tool_names),
+            "discovered_tools": discovered_tool_names,
+            "registered_tools_count": len(tools),
+            "registered_tools": [t.name for t in tools] if tools else [],
+            "agent_name": "TodoAgent",
+            "degraded_mode": mcp_server is None,
+        },
+    )
 
     return agent
 
 
-@gemini_retry
+@groq_retry
 async def _execute_agent_with_retry(
     agent: Agent, input_text: str, context: Any = None
 ) -> Any:
     """
     Internal function to execute agent with retry logic.
 
-    This function is wrapped with @gemini_retry decorator for exponential backoff:
+    This function is wrapped with @groq_retry decorator for exponential backoff:
     - Max attempts: 3
     - Exponential backoff: 2s → 4s → 8s (with jitter)
     - Max wait: 60 seconds
@@ -490,17 +851,17 @@ async def _execute_agent_with_retry(
     import asyncio
     import time
 
-    # T084: Gemini API timeout constant (30 seconds)
-    # This ensures each Gemini API call completes within reasonable time
-    GEMINI_TIMEOUT_SECONDS = 30
+    # T084: Groq API timeout constant (30 seconds)
+    # This ensures each Groq API call completes within reasonable time
+    GROQ_TIMEOUT_SECONDS = 30
 
     # T028: Track execution start time for duration logging
     execution_start_time = time.time()
 
     try:
-        # T084: Wrap agent execution with timeout to prevent hanging on slow Gemini API
+        # T084: Wrap agent execution with timeout to prevent hanging on slow Groq API
         # Note: AsyncOpenAI client also has timeout configured, this is a safety net
-        async with asyncio.timeout(GEMINI_TIMEOUT_SECONDS):
+        async with asyncio.timeout(GROQ_TIMEOUT_SECONDS):
             # Execute agent with MCP context
             if context:
                 result = await Runner.run(agent, input=input_text, context=context)
@@ -520,15 +881,15 @@ async def _execute_agent_with_retry(
         execution_duration = time.time() - execution_start_time
 
         logger.warning(
-            f"Gemini API call timed out after {GEMINI_TIMEOUT_SECONDS}s (will retry)",
+            f"Groq API call timed out after {GROQ_TIMEOUT_SECONDS}s (will retry)",
             extra={
                 "execution_duration_seconds": execution_duration,
-                "timeout_seconds": GEMINI_TIMEOUT_SECONDS,
+                "timeout_seconds": GROQ_TIMEOUT_SECONDS,
                 "result_status": "timeout",
             },
         )
         raise TimeoutError(
-            f"Gemini API execution exceeded timeout of {GEMINI_TIMEOUT_SECONDS}s"
+            f"Groq API execution exceeded timeout of {GROQ_TIMEOUT_SECONDS}s"
         ) from e
 
     except (ConnectionError, TimeoutError, OSError) as e:
@@ -536,7 +897,7 @@ async def _execute_agent_with_retry(
         execution_duration = time.time() - execution_start_time
 
         logger.warning(
-            f"Gemini API call failed (will retry): {e}",
+            f"Groq API call failed (will retry): {e}",
             extra={
                 "execution_duration_seconds": execution_duration,
                 "result_status": "failed",
@@ -684,11 +1045,11 @@ async def execute_agent_with_resilience(
     Execute TodoAgent with circuit breaker and retry logic for resilience.
 
     This function wraps agent execution with:
-    - Circuit breaker pattern (fail-fast when Gemini API is down)
+    - Circuit breaker pattern (fail-fast when Groq API is down)
     - Exponential backoff retry (3 attempts with jitter)
 
     The resilience layers protect against:
-    - Gemini API rate limiting
+    - Groq API rate limiting
     - Network transient failures
     - Temporary API unavailability
 
@@ -716,7 +1077,7 @@ async def execute_agent_with_resilience(
         ... else:
         ...     print(f"Error: {result['message']}")
     """
-    circuit_breaker = get_gemini_circuit_breaker()
+    circuit_breaker = get_groq_circuit_breaker()
 
     try:
         # Circuit breaker wraps retry logic
@@ -727,7 +1088,7 @@ async def execute_agent_with_resilience(
         return {"success": True, "result": result}
 
     except CircuitBreakerError as e:
-        logger.error(f"Circuit breaker open for Gemini API: {e}")
+        logger.error(f"Circuit breaker open for Groq API: {e}")
         return {
             "success": False,
             "error": "circuit_breaker_open",

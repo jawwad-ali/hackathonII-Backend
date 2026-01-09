@@ -50,7 +50,7 @@ class CreateTodoInput(TypedDict, total=False):
     due_date: Optional[str]
     priority: Optional[Literal["low", "medium", "high"]]
     tags: Optional[str]
-    status: Optional[Literal["pending", "in_progress", "completed", "cancelled"]]
+    status: Optional[Literal["active", "completed", "archived"]]
 
 
 class CreateTodoOutput(TypedDict):
@@ -98,30 +98,30 @@ class ListTodosInput(TypedDict, total=False):
     """
     Input schema for list_todos MCP tool.
 
-    Retrieves todo items with optional filters.
+    Retrieves todo items with optional filters. By default (no filters),
+    returns only active todos for backward compatibility.
 
     Optional Fields:
-        status: Filter by status (pending, in_progress, completed, cancelled)
+        status: Filter by status (active, completed, archived)
         priority: Filter by priority (low, medium, high)
-        due_date_filter: Filter by due date (today, tomorrow, this_week, overdue)
-        tags: Filter by tags (comma-separated)
-        limit: Maximum number of results (default: 100, max: 500)
+        limit: Maximum number of results to return
         offset: Pagination offset (default: 0)
+
+    Note: Tags filtering not implemented in this phase.
+    All filters use AND logic (all conditions must match).
 
     Example:
         {
-            "status": "pending",
+            "status": "active",
             "priority": "high",
-            "due_date_filter": "today",
             "limit": 50
         }
     """
-    status: Optional[Literal["pending", "in_progress", "completed", "cancelled"]]
+    status: Optional[Literal["active", "completed", "archived"]]
     priority: Optional[Literal["low", "medium", "high"]]
-    due_date_filter: Optional[Literal["today", "tomorrow", "this_week", "overdue"]]
-    tags: Optional[str]
     limit: Optional[int]
     offset: Optional[int]
+    # Note: tags filtering deferred to future phase
 
 
 class ListTodosOutput(TypedDict):
@@ -191,7 +191,7 @@ class UpdateTodoInput(TypedDict, total=False):
     due_date: Optional[str]
     priority: Optional[Literal["low", "medium", "high"]]
     tags: Optional[str]
-    status: Optional[Literal["pending", "in_progress", "completed", "cancelled"]]
+    status: Optional[Literal["active", "completed", "archived"]]
 
 
 class UpdateTodoOutput(TypedDict):
@@ -226,24 +226,34 @@ class UpdateTodoOutput(TypedDict):
     updated_at: str
 
 
-class DeleteTodoInput(TypedDict):
+class DeleteTodoInput(TypedDict, total=False):
     """
     Input schema for delete_todo MCP tool.
 
-    Deletes a todo item by ID.
+    Deletes todo items by ID or by filters.
 
-    Required Fields:
-        todo_id: Unique identifier of the todo to delete
+    Optional Fields:
+        todo_id: Unique identifier of the todo to delete (single)
+        todo_ids: List of todo IDs to delete
+        status: Filter by status (active, completed, archived, all)
+        priority: Filter by priority (low, medium, high)
+        keyword: Substring match against title/description
+        confirm: Set true to confirm mass deletion
 
     Example:
         {
             "todo_id": 123
         }
     """
-    todo_id: int
+    todo_id: Optional[int]
+    todo_ids: Optional[List[int]]
+    status: Optional[Literal["active", "completed", "archived", "all"]]
+    priority: Optional[Literal["low", "medium", "high"]]
+    keyword: Optional[str]
+    confirm: Optional[bool]
 
 
-class DeleteTodoOutput(TypedDict):
+class DeleteTodoOutput(TypedDict, total=False):
     """
     Output schema for delete_todo MCP tool.
 
@@ -253,6 +263,11 @@ class DeleteTodoOutput(TypedDict):
         success: Whether the deletion was successful
         message: Human-readable confirmation message
         deleted_id: ID of the deleted todo
+        deleted_ids: List of deleted todo IDs (for batch deletions)
+        deleted_count: Number of deleted todos
+        requested_count: Number of todos requested for deletion
+        confirmation_required: True when mass deletion needs confirmation
+        errors: Optional list of deletion errors
 
     Example:
         {
@@ -263,7 +278,12 @@ class DeleteTodoOutput(TypedDict):
     """
     success: bool
     message: str
-    deleted_id: int
+    deleted_id: Optional[int]
+    deleted_ids: Optional[List[int]]
+    deleted_count: Optional[int]
+    requested_count: Optional[int]
+    confirmation_required: Optional[bool]
+    errors: Optional[List[str]]
 
 
 # MCP Tool Registry

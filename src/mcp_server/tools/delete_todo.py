@@ -7,7 +7,7 @@ The tool validates that the todo exists before deletion and provides clear error
 messages for non-existent IDs. Returns MCP-compliant responses to the AI agent.
 """
 
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from sqlmodel import Session, select
 
@@ -16,7 +16,7 @@ from src.mcp_server.models import Todo
 from src.mcp_server.server import mcp
 
 
-def _delete_todo_impl(id: int, _test_session: Optional[Session] = None) -> str:
+def _delete_todo_impl(id: int, _test_session: Optional[Session] = None) -> Dict[str, Any]:
     """Internal implementation of delete_todo with test session support.
 
     This tool performs a hard delete, completely removing the todo from the database.
@@ -28,7 +28,7 @@ def _delete_todo_impl(id: int, _test_session: Optional[Session] = None) -> str:
         _test_session: Internal parameter for dependency injection during testing
 
     Returns:
-        str: Human-readable confirmation message with deleted todo ID
+        dict: Structured confirmation with deleted todo ID
 
     Raises:
         ValueError: If todo with given ID doesn't exist
@@ -62,8 +62,11 @@ def _delete_todo_impl(id: int, _test_session: Optional[Session] = None) -> str:
             session.delete(todo)
             session.commit()
 
-            # Return MCP-compliant response (FastMCP converts string to Content object)
-            return f"Todo deleted successfully! ID: {todo_id} has been permanently removed."
+            return {
+                "success": True,
+                "deleted_id": todo_id,
+                "message": f"Todo deleted successfully! ID: {todo_id} has been permanently removed.",
+            }
 
         except ValueError:
             # Re-raise ValueError (not found errors)
@@ -93,8 +96,11 @@ def _delete_todo_impl(id: int, _test_session: Optional[Session] = None) -> str:
                 session.delete(todo)
                 session.commit()
 
-                # Return MCP-compliant response (FastMCP converts string to Content object)
-                return f"Todo deleted successfully! ID: {todo_id} has been permanently removed."
+                return {
+                    "success": True,
+                    "deleted_id": todo_id,
+                    "message": f"Todo deleted successfully! ID: {todo_id} has been permanently removed.",
+                }
 
             except ValueError:
                 # Re-raise ValueError (not found errors)
@@ -107,7 +113,7 @@ def _delete_todo_impl(id: int, _test_session: Optional[Session] = None) -> str:
 
 # Create MCP tool wrapper that excludes test parameter
 @mcp.tool
-def delete_todo(id: int) -> str:
+def delete_todo(id: int) -> Dict[str, Any]:
     """Permanently deletes a todo by ID (hard delete).
 
     Removes the todo completely from the database. Cannot be recovered after deletion.
@@ -117,7 +123,7 @@ def delete_todo(id: int) -> str:
         id: Todo ID to delete
 
     Returns:
-        str: Confirmation message with deleted todo ID
+        dict: Structured confirmation with deleted todo ID
 
     Raises:
         ValueError: If todo with given ID doesn't exist

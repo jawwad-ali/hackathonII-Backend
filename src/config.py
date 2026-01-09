@@ -2,7 +2,7 @@
 Configuration Management
 Loads and validates environment variables using Pydantic Settings
 
-Includes circuit breaker for Gemini API calls to prevent cascading failures.
+Includes circuit breaker for Groq API calls to prevent cascading failures.
 """
 
 from pydantic_settings import BaseSettings
@@ -19,7 +19,7 @@ from src.resilience.circuit_breaker import (
     CircuitBreakerConfig,
     CircuitBreakerError
 )
-from src.resilience.retry import gemini_retry
+from src.resilience.retry import groq_retry
 from agents import AsyncOpenAI, OpenAIChatCompletionsModel, RunConfig
 
 class Settings(BaseSettings):
@@ -34,14 +34,14 @@ class Settings(BaseSettings):
     APP_PORT: int = Field(default=8000, description="Application port")
     LOG_LEVEL: str = Field(default="INFO", description="Logging level")
 
-    # Gemini API Configuration
-    GEMINI_API_KEY: str = Field(..., description="Gemini API key")
-    GEMINI_BASE_URL: str = Field(
-        default="https://generativelanguage.googleapis.com/v1beta/openai/",
-        description="Gemini OpenAI-compatible base URL",
+    # Groq API Configuration (Llama via Groq)
+    GROQ_API_KEY: str = Field(..., description="Groq API key")
+    GROQ_BASE_URL: str = Field(
+        default="https://api.groq.com/openai/v1",
+        description="Groq OpenAI-compatible base URL",
     )
-    GEMINI_MODEL: str = Field(
-        default="gemini-2.5-flash", description="Gemini model name"
+    GROQ_MODEL: str = Field(
+        default="llama-3.3-70b-versatile", description="Groq model name (Llama)"
     )
 
     # MCP Server Configuration
@@ -64,11 +64,11 @@ class Settings(BaseSettings):
     CIRCUIT_BREAKER_MCP_RECOVERY_TIMEOUT: int = Field(
         default=30, description="MCP circuit breaker recovery timeout in seconds"
     )
-    CIRCUIT_BREAKER_GEMINI_FAILURE_THRESHOLD: int = Field(
-        default=3, description="Gemini circuit breaker failure threshold"
+    CIRCUIT_BREAKER_GROQ_FAILURE_THRESHOLD: int = Field(
+        default=3, description="Groq circuit breaker failure threshold"
     )
-    CIRCUIT_BREAKER_GEMINI_RECOVERY_TIMEOUT: int = Field(
-        default=60, description="Gemini circuit breaker recovery timeout in seconds"
+    CIRCUIT_BREAKER_GROQ_RECOVERY_TIMEOUT: int = Field(
+        default=60, description="Groq circuit breaker recovery timeout in seconds"
     )
 
     # Performance Configuration
@@ -80,6 +80,14 @@ class Settings(BaseSettings):
     )
     MAX_CONCURRENT_CONNECTIONS: int = Field(
         default=100, description="Maximum concurrent connections"
+    )
+
+    # Agent Execution Limits
+    AGENT_MAX_TURNS: int = Field(
+        default=4, description="Maximum agent turns per request"
+    )
+    AGENT_MAX_OUTPUT_TOKENS: int = Field(
+        default=512, description="Maximum output tokens per model call"
     )
 
     @field_validator("MCP_SERVER_ARGS")
@@ -152,13 +160,13 @@ class Settings(BaseSettings):
 # Global settings instance
 settings = Settings()
 
-# Global circuit breaker for Gemini API
+# Global circuit breaker for Groq API
 # Configuration:
 # - 3 consecutive failures before opening (stricter due to external API)
 # - 60 second recovery timeout (longer for external API)
 # - 2 test calls in half-open state
-_gemini_circuit_breaker = CircuitBreaker(
-    name="gemini_api",
+_groq_circuit_breaker = CircuitBreaker(
+    name="groq_api",
     config=CircuitBreakerConfig(
         failure_threshold=3,
         recovery_timeout=timedelta(seconds=60),
@@ -183,29 +191,29 @@ def get_mcp_server_config() -> dict:
     }
 
 
-def get_gemini_config() -> dict:
+def get_groq_config() -> dict:
     """
-    Get Gemini API configuration for AsyncOpenAI client.
+    Get Groq API configuration for AsyncOpenAI client.
 
     Returns:
-        dict: Gemini configuration dictionary with api_key, base_url, model
+        dict: Groq configuration dictionary with api_key, base_url, model
     """
     return {
-        "api_key": settings.GEMINI_API_KEY,
-        "base_url": settings.GEMINI_BASE_URL,
-        "model": settings.GEMINI_MODEL,
+        "api_key": settings.GROQ_API_KEY,
+        "base_url": settings.GROQ_BASE_URL,
+        "model": settings.GROQ_MODEL,
     }
 
 
-def get_gemini_client() -> AsyncOpenAI:
+def get_groq_client() -> AsyncOpenAI:
     """
-    Create and return an AsyncOpenAI client configured for Gemini API with resilience.
+    Create and return an AsyncOpenAI client configured for Groq API with resilience.
 
-    This client bridges OpenAI Agents SDK to Google Gemini 2.5 Flash
-    by configuring a custom base_url pointing to Gemini's OpenAI-compatible endpoint.
+    This client bridges OpenAI Agents SDK to Groq's Llama models
+    by configuring a custom base_url pointing to Groq's OpenAI-compatible endpoint.
 
     The client is wrapped with circuit breaker protection to prevent cascading failures
-    when the Gemini API is unavailable or experiencing issues.
+    when the Groq API is unavailable or experiencing issues.
 
     T084: Timeout configuration added to prevent hanging on slow API responses.
     - Request timeout: 30 seconds (matches REQUEST_TIMEOUT setting)
@@ -215,16 +223,16 @@ def get_gemini_client() -> AsyncOpenAI:
     creation. This function creates a plain client that will be wrapped when used.
 
     Returns:
-        AsyncOpenAI: Configured async OpenAI client for Gemini with timeout
+        AsyncOpenAI: Configured async OpenAI client for Groq with timeout
 
     Example:
-        >>> client = get_gemini_client()
+        >>> client = get_groq_client()
         >>> # Circuit breaker protection applied when agent makes API calls
         >>> # Timeout of 30s enforced on all API requests
     """
-    config = get_gemini_config()
+    config = get_groq_config()
 
-    # T084: Configure timeout for Gemini API requests
+    # T084: Configure timeout for Groq API requests
     # This prevents the client from hanging indefinitely on slow/unresponsive API
     return AsyncOpenAI(
         api_key=config["api_key"],
@@ -232,9 +240,9 @@ def get_gemini_client() -> AsyncOpenAI:
     )
 
 
-def get_gemini_circuit_breaker() -> CircuitBreaker:
+def get_groq_circuit_breaker() -> CircuitBreaker:
     """
-    Get the Gemini API circuit breaker for monitoring.
+    Get the Groq API circuit breaker for monitoring.
 
     This function provides access to the circuit breaker instance for:
     - Health check endpoints
@@ -242,12 +250,12 @@ def get_gemini_circuit_breaker() -> CircuitBreaker:
     - Manual circuit breaker reset (administrative use)
 
     Returns:
-        CircuitBreaker: The global Gemini API circuit breaker
+        CircuitBreaker: The global Groq API circuit breaker
 
     Example:
-        >>> breaker = get_gemini_circuit_breaker()
+        >>> breaker = get_groq_circuit_breaker()
         >>> state = breaker.get_state()
         >>> print(f"Circuit state: {state.state.value}")
         >>> print(f"Failure count: {state.failure_count}")
     """
-    return _gemini_circuit_breaker
+    return _groq_circuit_breaker

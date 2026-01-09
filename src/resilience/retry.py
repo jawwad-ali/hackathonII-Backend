@@ -5,7 +5,7 @@ with exponential backoff, jitter, and timeout limits.
 
 This module defines retry strategies for:
 - MCP Server calls (more tolerant, longer timeouts)
-- Gemini API calls (stricter limits due to rate limiting)
+- Groq API calls (stricter limits due to rate limiting)
 """
 
 from tenacity import (
@@ -81,8 +81,8 @@ def create_mcp_retry_decorator():
     )
 
 
-def create_gemini_retry_decorator():
-    """Create retry decorator for Gemini API calls
+def create_groq_retry_decorator():
+    """Create retry decorator for Groq API calls
 
     Configuration:
         - Max attempts: 3 (stricter due to API rate limits)
@@ -99,15 +99,15 @@ def create_gemini_retry_decorator():
     separately by circuit breaker or caller logic.
 
     Usage:
-        @create_gemini_retry_decorator()
-        async def call_gemini_api(messages: list):
-            return await gemini_client.chat.completions.create(
-                model="gemini-2.5-flash",
+        @create_groq_retry_decorator()
+        async def call_groq_api(messages: list):
+            return await groq_client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
                 messages=messages
             )
 
     Returns:
-        Tenacity retry decorator configured for Gemini API calls
+        Tenacity retry decorator configured for Groq API calls
     """
     return retry(
         # Stop after 3 attempts (1 initial + 2 retries)
@@ -146,7 +146,7 @@ def create_custom_retry_decorator(
     """Create custom retry decorator with configurable parameters
 
     Allows fine-tuning retry behavior for specific use cases beyond
-    the standard MCP and Gemini configurations.
+    the standard MCP and Groq configurations.
 
     Args:
         max_attempts: Maximum number of retry attempts (default: 3)
@@ -179,7 +179,7 @@ def create_custom_retry_decorator(
 
 # Convenience decorators for direct use
 mcp_retry = create_mcp_retry_decorator()
-gemini_retry = create_gemini_retry_decorator()
+groq_retry = create_groq_retry_decorator()
 
 
 # Usage Examples (for documentation):
@@ -192,14 +192,14 @@ Example 1: MCP Server Call with Retry
     async def fetch_todos_from_mcp():
         return await mcp_client.call_tool("list_todos", {})
 
-Example 2: Gemini API Call with Retry
+Example 2: Groq API Call with Retry
 
-    from src.resilience.retry import gemini_retry
+    from src.resilience.retry import groq_retry
 
-    @gemini_retry
+    @groq_retry
     async def generate_response(prompt: str):
-        return await gemini_client.chat.completions.create(
-            model="gemini-2.5-flash",
+        return await groq_client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
             messages=[{"role": "user", "content": prompt}]
         )
 

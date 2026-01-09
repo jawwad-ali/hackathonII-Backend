@@ -491,12 +491,12 @@ class TestListTodosTool:
     def test_list_todos_returns_active_only(self, session, sample_todos):
         """Test that list_todos returns only active todos, excluding completed/archived."""
         # Arrange
-        from src.mcp_server.tools.list_todos import list_todos
+        from src.mcp_server.tools.list_todos import _list_todos_impl
 
         # sample_todos has 2 active, 1 completed, 1 archived
 
         # Act
-        result = list_todos(_test_session=session)
+        result = _list_todos_impl(_test_session=session)
 
         # Assert - Should only return active todos
         assert isinstance(result, str)
@@ -508,12 +508,12 @@ class TestListTodosTool:
     def test_list_todos_empty_database(self, session):
         """Test that list_todos handles empty database gracefully."""
         # Arrange
-        from src.mcp_server.tools.list_todos import list_todos
+        from src.mcp_server.tools.list_todos import _list_todos_impl
 
         # Database is empty (no sample_todos fixture)
 
         # Act
-        result = list_todos(_test_session=session)
+        result = _list_todos_impl(_test_session=session)
 
         # Assert - Should return empty result or message indicating no todos
         assert isinstance(result, str)
@@ -522,12 +522,12 @@ class TestListTodosTool:
     def test_list_todos_with_single_active_todo(self, session, sample_todo):
         """Test list_todos with exactly one active todo."""
         # Arrange
-        from src.mcp_server.tools.list_todos import list_todos
+        from src.mcp_server.tools.list_todos import _list_todos_impl
 
         # sample_todo fixture provides 1 active todo
 
         # Act
-        result = list_todos(_test_session=session)
+        result = _list_todos_impl(_test_session=session)
 
         # Assert
         assert isinstance(result, str)
@@ -537,7 +537,7 @@ class TestListTodosTool:
     def test_list_todos_excludes_completed_status(self, session):
         """Test that list_todos excludes todos with completed status."""
         # Arrange
-        from src.mcp_server.tools.list_todos import list_todos
+        from src.mcp_server.tools.list_todos import _list_todos_impl
 
         # Create active and completed todos
         active_todo = Todo(title="Active task", status=TodoStatus.ACTIVE)
@@ -547,7 +547,7 @@ class TestListTodosTool:
         session.commit()
 
         # Act
-        result = list_todos(_test_session=session)
+        result = _list_todos_impl(_test_session=session)
 
         # Assert
         assert "Active task" in result
@@ -556,7 +556,7 @@ class TestListTodosTool:
     def test_list_todos_excludes_archived_status(self, session):
         """Test that list_todos excludes todos with archived status."""
         # Arrange
-        from src.mcp_server.tools.list_todos import list_todos
+        from src.mcp_server.tools.list_todos import _list_todos_impl
 
         # Create active and archived todos
         active_todo = Todo(title="Active task", status=TodoStatus.ACTIVE)
@@ -566,7 +566,7 @@ class TestListTodosTool:
         session.commit()
 
         # Act
-        result = list_todos(_test_session=session)
+        result = _list_todos_impl(_test_session=session)
 
         # Assert
         assert "Active task" in result
@@ -575,10 +575,10 @@ class TestListTodosTool:
     def test_list_todos_returns_mcp_compliant_response(self, session, sample_todos):
         """Test that list_todos returns MCP-compliant Content object."""
         # Arrange
-        from src.mcp_server.tools.list_todos import list_todos
+        from src.mcp_server.tools.list_todos import _list_todos_impl
 
         # Act
-        result = list_todos(_test_session=session)
+        result = _list_todos_impl(_test_session=session)
 
         # Assert - FastMCP automatically converts to MCP Content format
         # Tool should return a string (FastMCP handles Content wrapping)
@@ -588,7 +588,7 @@ class TestListTodosTool:
     def test_list_todos_includes_all_active_fields(self, session):
         """Test that list_todos includes all todo fields (id, title, description, status, timestamps)."""
         # Arrange
-        from src.mcp_server.tools.list_todos import list_todos
+        from src.mcp_server.tools.list_todos import _list_todos_impl
 
         todo = Todo(
             title="Test todo",
@@ -600,7 +600,7 @@ class TestListTodosTool:
         session.refresh(todo)
 
         # Act
-        result = list_todos(_test_session=session)
+        result = _list_todos_impl(_test_session=session)
 
         # Assert - Response should include key fields
         assert "Test todo" in result  # Title
@@ -611,7 +611,7 @@ class TestListTodosTool:
     def test_list_todos_with_multiple_active_todos(self, session):
         """Test list_todos returns all active todos when multiple exist."""
         # Arrange
-        from src.mcp_server.tools.list_todos import list_todos
+        from src.mcp_server.tools.list_todos import _list_todos_impl
 
         # Create 5 active todos
         for i in range(1, 6):
@@ -620,7 +620,7 @@ class TestListTodosTool:
         session.commit()
 
         # Act
-        result = list_todos(_test_session=session)
+        result = _list_todos_impl(_test_session=session)
 
         # Assert - All 5 should be in result
         assert isinstance(result, str)
@@ -630,7 +630,7 @@ class TestListTodosTool:
     def test_list_todos_after_status_change_to_completed(self, session):
         """Test that todo disappears from list_todos after status changed to completed."""
         # Arrange
-        from src.mcp_server.tools.list_todos import list_todos
+        from src.mcp_server.tools.list_todos import _list_todos_impl
 
         # Create active todo
         todo = Todo(title="Task to complete", status=TodoStatus.ACTIVE)
@@ -654,7 +654,7 @@ class TestListTodosTool:
     def test_list_todos_after_status_change_to_archived(self, session):
         """Test that todo disappears from list_todos after status changed to archived."""
         # Arrange
-        from src.mcp_server.tools.list_todos import list_todos
+        from src.mcp_server.tools.list_todos import _list_todos_impl
 
         # Create active todo
         todo = Todo(title="Task to archive", status=TodoStatus.ACTIVE)
@@ -678,7 +678,7 @@ class TestListTodosTool:
     def test_list_todos_count_accuracy(self, session):
         """Test that list_todos count matches actual number of active todos."""
         # Arrange
-        from src.mcp_server.tools.list_todos import list_todos
+        from src.mcp_server.tools.list_todos import _list_todos_impl
 
         # Create 3 active, 2 completed, 1 archived
         for i in range(3):
@@ -689,13 +689,225 @@ class TestListTodosTool:
         session.commit()
 
         # Act
-        result = list_todos(_test_session=session)
+        result = _list_todos_impl(_test_session=session)
 
         # Assert - Should report 3 active todos
         assert "3" in result or "three" in result.lower()
         # Verify all active todos present
         for i in range(3):
             assert f"Active {i}" in result
+
+
+class TestListTodosFiltering:
+    """Integration tests for list_todos filtering capabilities.
+
+    Tests cover:
+    - Priority filtering (low, medium, high)
+    - Status filtering (active, completed, archived)
+    - Combined filters (status + priority with AND logic)
+    - Invalid filter values (strict validation)
+    - Pagination (limit, offset)
+    - Empty results with filters
+    """
+
+    def test_list_todos_filter_by_priority_high(self, session, sample_todos_with_priority):
+        """Test filtering todos by high priority only."""
+        # Arrange
+        from src.mcp_server.tools.list_todos import _list_todos_impl
+
+        # Act
+        result = _list_todos_impl(priority="high", _test_session=session)
+
+        # Assert - Should only return active high priority todos (default status=active)
+        assert isinstance(result, str)
+        assert "High priority active task" in result
+        assert "Medium priority active task" not in result
+        assert "Low priority active task" not in result
+        assert "high priority" in result.lower()
+
+    def test_list_todos_filter_by_priority_medium(self, session, sample_todos_with_priority):
+        """Test filtering todos by medium priority."""
+        # Arrange
+        from src.mcp_server.tools.list_todos import _list_todos_impl
+
+        # Act
+        result = _list_todos_impl(priority="medium", _test_session=session)
+
+        # Assert
+        assert "Medium priority active task" in result
+        assert "High priority active task" not in result
+        assert "Low priority active task" not in result
+        assert "medium priority" in result.lower()
+
+    def test_list_todos_filter_by_priority_low(self, session, sample_todos_with_priority):
+        """Test filtering todos by low priority."""
+        # Arrange
+        from src.mcp_server.tools.list_todos import _list_todos_impl
+
+        # Act
+        result = _list_todos_impl(priority="low", _test_session=session)
+
+        # Assert
+        assert "Low priority active task" in result
+        assert "High priority active task" not in result
+        assert "Medium priority active task" not in result
+        assert "low priority" in result.lower()
+
+    def test_list_todos_filter_by_status_active(self, session, sample_todos_with_priority):
+        """Test explicitly filtering by active status."""
+        # Arrange
+        from src.mcp_server.tools.list_todos import _list_todos_impl
+
+        # Act
+        result = _list_todos_impl(status="active", _test_session=session)
+
+        # Assert - Should return 3 active todos (all priorities)
+        assert "High priority active task" in result
+        assert "Medium priority active task" in result
+        assert "Low priority active task" in result
+        assert "High priority completed task" not in result
+        assert "Archived high priority task" not in result
+        assert "3" in result or "three" in result.lower()
+
+    def test_list_todos_filter_by_status_completed(self, session, sample_todos_with_priority):
+        """Test filtering by completed status."""
+        # Arrange
+        from src.mcp_server.tools.list_todos import _list_todos_impl
+
+        # Act
+        result = _list_todos_impl(status="completed", _test_session=session)
+
+        # Assert - Should return 2 completed todos
+        assert "High priority completed task" in result
+        assert "Medium priority completed task" in result
+        assert "High priority active task" not in result
+        assert "Archived high priority task" not in result
+        assert "2" in result or "two" in result.lower()
+
+    def test_list_todos_filter_by_status_archived(self, session, sample_todos_with_priority):
+        """Test filtering by archived status."""
+        # Arrange
+        from src.mcp_server.tools.list_todos import _list_todos_impl
+
+        # Act
+        result = _list_todos_impl(status="archived", _test_session=session)
+
+        # Assert - Should return 1 archived todo
+        assert "Archived high priority task" in result
+        assert "High priority active task" not in result
+        assert "High priority completed task" not in result
+        assert "1" in result or "one" in result.lower()
+
+    def test_list_todos_combined_filters_active_high(self, session, sample_todos_with_priority):
+        """Test combining status and priority filters (AND logic)."""
+        # Arrange
+        from src.mcp_server.tools.list_todos import _list_todos_impl
+
+        # Act
+        result = _list_todos_impl(status="active", priority="high", _test_session=session)
+
+        # Assert - Should return only 1 todo: active + high priority
+        assert "High priority active task" in result
+        assert "Medium priority active task" not in result
+        assert "High priority completed task" not in result
+        assert "1" in result or "one" in result.lower()
+        assert "high priority" in result.lower()
+        assert "active" in result.lower()
+
+    def test_list_todos_combined_filters_completed_high(self, session, sample_todos_with_priority):
+        """Test filtering for completed high priority todos."""
+        # Arrange
+        from src.mcp_server.tools.list_todos import _list_todos_impl
+
+        # Act
+        result = _list_todos_impl(status="completed", priority="high", _test_session=session)
+
+        # Assert
+        assert "High priority completed task" in result
+        assert "Medium priority completed task" not in result
+        assert "High priority active task" not in result
+        assert "1" in result or "one" in result.lower()
+
+    def test_list_todos_invalid_priority_value(self, session):
+        """Test strict validation for invalid priority values."""
+        # Arrange
+        from src.mcp_server.tools.list_todos import _list_todos_impl
+
+        # Act
+        result = _list_todos_impl(priority="super-high", _test_session=session)
+
+        # Assert - Should return error message
+        assert isinstance(result, str)
+        assert "error" in result.lower() or "invalid" in result.lower()
+        assert "super-high" in result.lower()
+        assert "low" in result.lower() and "medium" in result.lower() and "high" in result.lower()
+
+    def test_list_todos_invalid_status_value(self, session):
+        """Test strict validation for invalid status values."""
+        # Arrange
+        from src.mcp_server.tools.list_todos import _list_todos_impl
+
+        # Act - Use a truly invalid status that won't be normalized
+        result = _list_todos_impl(status="xyz_invalid_status", _test_session=session)
+
+        # Assert - Should return error message
+        assert isinstance(result, str)
+        assert "error" in result.lower() or "invalid" in result.lower()
+        assert "xyz_invalid_status" in result.lower()
+        assert "active" in result.lower() and "completed" in result.lower() and "archived" in result.lower()
+
+    def test_list_todos_case_insensitive_filters(self, session, sample_todos_with_priority):
+        """Test that filters are case-insensitive."""
+        # Arrange
+        from src.mcp_server.tools.list_todos import _list_todos_impl
+
+        # Act - Try uppercase and mixed case
+        result_upper = _list_todos_impl(priority="HIGH", _test_session=session)
+        result_mixed = _list_todos_impl(status="Active", priority="High", _test_session=session)
+
+        # Assert - Both should work
+        assert "High priority active task" in result_upper
+        assert "High priority active task" in result_mixed
+
+    def test_list_todos_empty_results_with_filters(self, session, sample_todos_with_priority):
+        """Test handling of filters that match no todos."""
+        # Arrange
+        from src.mcp_server.tools.list_todos import _list_todos_impl
+
+        # Act - Filter for archived low priority (doesn't exist in fixture)
+        result = _list_todos_impl(status="archived", priority="low", _test_session=session)
+
+        # Assert - Should indicate 0 results
+        assert "0" in result or "no" in result.lower() or "empty" in result.lower()
+
+    def test_list_todos_with_limit(self, session, sample_todos_with_priority):
+        """Test pagination with limit parameter."""
+        # Arrange
+        from src.mcp_server.tools.list_todos import _list_todos_impl
+
+        # Act - Limit to 2 active todos
+        result = _list_todos_impl(status="active", limit=2, _test_session=session)
+
+        # Assert - Should return at most 2 results
+        assert isinstance(result, str)
+        # Count how many todo titles are in the result
+        count = sum(1 for todo in ["High priority active task", "Medium priority active task", "Low priority active task"] if todo in result)
+        assert count <= 2
+
+    def test_list_todos_with_offset(self, session, sample_todos_with_priority):
+        """Test pagination with offset parameter."""
+        # Arrange
+        from src.mcp_server.tools.list_todos import _list_todos_impl
+
+        # Act - Get active todos with offset 1
+        result_no_offset = _list_todos_impl(status="active", _test_session=session)
+        result_with_offset = _list_todos_impl(status="active", offset=1, _test_session=session)
+
+        # Assert - Results should be different
+        assert isinstance(result_no_offset, str)
+        assert isinstance(result_with_offset, str)
+        # Offset should skip the first result
+        assert result_no_offset != result_with_offset
 
 
 class TestUpdateTodoTool:
@@ -993,7 +1205,7 @@ class TestUpdateTodoTool:
         """
         # Arrange
         from src.mcp_server.tools.update_todo import update_todo
-        from src.mcp_server.tools.list_todos import list_todos
+        from src.mcp_server.tools.list_todos import _list_todos_impl
 
         # Create an active todo
         todo = Todo(
@@ -1075,7 +1287,7 @@ class TestSoftDeleteBehavior:
     def test_completed_todo_excluded_from_list_todos(self, session):
         """Test that completed todos do not appear in list_todos results."""
         # Arrange
-        from src.mcp_server.tools.list_todos import list_todos
+        from src.mcp_server.tools.list_todos import _list_todos_impl
 
         # Create active and completed todos
         active_todo = Todo(title="Active task", status=TodoStatus.ACTIVE)
@@ -1085,7 +1297,7 @@ class TestSoftDeleteBehavior:
         session.commit()
 
         # Act
-        result = list_todos(_test_session=session)
+        result = _list_todos_impl(_test_session=session)
 
         # Assert - Only active todo appears
         assert "Active task" in result
@@ -1094,7 +1306,7 @@ class TestSoftDeleteBehavior:
     def test_archived_todo_excluded_from_list_todos(self, session):
         """Test that archived todos do not appear in list_todos results."""
         # Arrange
-        from src.mcp_server.tools.list_todos import list_todos
+        from src.mcp_server.tools.list_todos import _list_todos_impl
 
         # Create active and archived todos
         active_todo = Todo(title="Active task", status=TodoStatus.ACTIVE)
@@ -1104,7 +1316,7 @@ class TestSoftDeleteBehavior:
         session.commit()
 
         # Act
-        result = list_todos(_test_session=session)
+        result = _list_todos_impl(_test_session=session)
 
         # Assert - Only active todo appears
         assert "Active task" in result
@@ -1113,7 +1325,7 @@ class TestSoftDeleteBehavior:
     def test_soft_delete_via_status_change_to_completed(self, session):
         """Test soft delete by changing status to completed (todo disappears from list)."""
         # Arrange
-        from src.mcp_server.tools.list_todos import list_todos
+        from src.mcp_server.tools.list_todos import _list_todos_impl
         from src.mcp_server.tools.update_todo import update_todo
 
         # Create active todo
@@ -1141,7 +1353,7 @@ class TestSoftDeleteBehavior:
     def test_soft_delete_via_status_change_to_archived(self, session):
         """Test soft delete by changing status to archived (todo disappears from list)."""
         # Arrange
-        from src.mcp_server.tools.list_todos import list_todos
+        from src.mcp_server.tools.list_todos import _list_todos_impl
         from src.mcp_server.tools.update_todo import update_todo
 
         # Create active todo
@@ -1169,7 +1381,7 @@ class TestSoftDeleteBehavior:
     def test_reactivate_completed_todo(self, session):
         """Test that completed todo can be reactivated and re-appears in list_todos."""
         # Arrange
-        from src.mcp_server.tools.list_todos import list_todos
+        from src.mcp_server.tools.list_todos import _list_todos_impl
         from src.mcp_server.tools.update_todo import update_todo
 
         # Create completed todo
@@ -1196,7 +1408,7 @@ class TestSoftDeleteBehavior:
     def test_reactivate_archived_todo(self, session):
         """Test that archived todo can be reactivated and re-appears in list_todos."""
         # Arrange
-        from src.mcp_server.tools.list_todos import list_todos
+        from src.mcp_server.tools.list_todos import _list_todos_impl
         from src.mcp_server.tools.update_todo import update_todo
 
         # Create archived todo
@@ -1223,7 +1435,7 @@ class TestSoftDeleteBehavior:
     def test_multiple_soft_deletes(self, session):
         """Test multiple todos can be soft deleted independently."""
         # Arrange
-        from src.mcp_server.tools.list_todos import list_todos
+        from src.mcp_server.tools.list_todos import _list_todos_impl
         from src.mcp_server.tools.update_todo import update_todo
 
         # Create multiple active todos
@@ -1565,7 +1777,7 @@ class TestDeleteTodoTool:
         the todo from the database so it cannot be retrieved afterward.
         """
         # Arrange
-        from src.mcp_server.tools.delete_todo import delete_todo
+        from src.mcp_server.tools.delete_todo import _delete_todo_impl
 
         # Create a todo to delete
         todo = Todo(title="Todo to delete", description="Will be deleted", status=TodoStatus.ACTIVE)
@@ -1578,7 +1790,7 @@ class TestDeleteTodoTool:
         assert session.get(Todo, todo_id) is not None
 
         # Act - Delete the todo
-        result = delete_todo(id=todo_id, _test_session=session)
+        result = _delete_todo_impl(id=todo_id, _test_session=session)
 
         # Assert - Todo is permanently deleted
         assert isinstance(result, str)
@@ -1596,7 +1808,7 @@ class TestDeleteTodoTool:
         an ID that doesn't exist in the database.
         """
         # Arrange
-        from src.mcp_server.tools.delete_todo import delete_todo
+        from src.mcp_server.tools.delete_todo import _delete_todo_impl
 
         # Use a non-existent ID
         non_existent_id = 99999
@@ -1606,7 +1818,7 @@ class TestDeleteTodoTool:
 
         # Act & Assert - Should raise ValueError
         with pytest.raises(ValueError) as exc_info:
-            delete_todo(id=non_existent_id, _test_session=session)
+            _delete_todo_impl(id=non_existent_id, _test_session=session)
 
         # Verify error message is descriptive
         error_message = str(exc_info.value).lower()
@@ -1620,7 +1832,7 @@ class TestDeleteTodoTool:
         that todo, leaving all other todos in the database unchanged.
         """
         # Arrange
-        from src.mcp_server.tools.delete_todo import delete_todo
+        from src.mcp_server.tools.delete_todo import _delete_todo_impl
 
         # Create multiple todos
         todo1 = Todo(title="Keep this one", description="Should remain", status=TodoStatus.ACTIVE)
@@ -1648,7 +1860,7 @@ class TestDeleteTodoTool:
         assert session.get(Todo, todo4_id) is not None
 
         # Act - Delete only todo2
-        result = delete_todo(id=todo2_id, _test_session=session)
+        result = _delete_todo_impl(id=todo2_id, _test_session=session)
 
         # Assert - Only todo2 is deleted
         assert session.get(Todo, todo2_id) is None
