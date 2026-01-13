@@ -8,7 +8,7 @@ isolated testing.
 import pytest
 from sqlmodel import Session, SQLModel, create_engine
 
-from src.mcp_server.models import Todo, TodoStatus
+from src.mcp_server.models import Todo, TodoStatus, TodoPriority
 
 
 @pytest.fixture(name="test_engine")
@@ -113,6 +113,72 @@ def sample_todos_fixture(session):
             title="Archived Todo",
             description="Old todo for reference",
             status=TodoStatus.ARCHIVED
+        ),
+    ]
+
+    for todo in todos:
+        session.add(todo)
+
+    session.commit()
+
+    # Refresh all todos to get their IDs
+    for todo in todos:
+        session.refresh(todo)
+
+    return todos
+
+
+@pytest.fixture(name="sample_todos_with_priority")
+def sample_todos_with_priority_fixture(session):
+    """Creates multiple sample todos with different priorities and statuses.
+
+    Provides a comprehensive collection for testing filtering operations.
+
+    Args:
+        session: The test database session fixture
+
+    Returns:
+        list[Todo]: List of sample todo objects with varied priority and status
+    """
+    todos = [
+        # Active todos with different priorities
+        Todo(
+            title="High priority active task",
+            description="Urgent task",
+            status=TodoStatus.ACTIVE,
+            priority=TodoPriority.HIGH
+        ),
+        Todo(
+            title="Medium priority active task",
+            description="Normal task",
+            status=TodoStatus.ACTIVE,
+            priority=TodoPriority.MEDIUM
+        ),
+        Todo(
+            title="Low priority active task",
+            description="Can wait",
+            status=TodoStatus.ACTIVE,
+            priority=TodoPriority.LOW
+        ),
+        # Completed todos with different priorities
+        Todo(
+            title="High priority completed task",
+            description="Done urgent task",
+            status=TodoStatus.COMPLETED,
+            priority=TodoPriority.HIGH
+        ),
+        Todo(
+            title="Medium priority completed task",
+            description="Done normal task",
+            status=TodoStatus.COMPLETED,
+            priority=TodoPriority.MEDIUM
+        ),
+        # Archived todo
+        Todo(
+            title="Archived high priority task",
+            description="Old urgent task",
+            status=TodoStatus.ARCHIVED,
+            priority=TodoPriority.HIGH
         ),
     ]
 

@@ -13,7 +13,7 @@ SQL Injection Prevention:
 """
 
 import re
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 from sqlmodel import Session, select, or_
 
@@ -104,7 +104,21 @@ def _sanitize_search_keyword(keyword: str) -> str:
     return keyword
 
 
-def _search_todos_impl(keyword: str, _test_session: Optional[Session] = None) -> str:
+def _serialize_todo(todo: Todo) -> Dict[str, Any]:
+    return {
+        "id": todo.id,
+        "title": todo.title,
+        "description": todo.description,
+        "due_date": todo.due_date.isoformat() if todo.due_date else None,
+        "priority": todo.priority.value,
+        "tags": todo.tags,
+        "status": todo.status.value,
+        "created_at": todo.created_at.isoformat(),
+        "updated_at": todo.updated_at.isoformat(),
+    }
+
+
+def _search_todos_impl(keyword: str, _test_session: Optional[Session] = None) -> dict:
     """Internal implementation of search_todos with test session support.
 
     This tool performs case-insensitive keyword matching across both title and
@@ -116,7 +130,7 @@ def _search_todos_impl(keyword: str, _test_session: Optional[Session] = None) ->
         _test_session: Internal parameter for dependency injection during testing
 
     Returns:
-        str: Human-readable summary with list of matching todos
+        dict: Structured list of matching todos
 
     Examples:
         >>> search_todos("grocery")
@@ -154,24 +168,15 @@ def _search_todos_impl(keyword: str, _test_session: Optional[Session] = None) ->
             result = session.exec(statement)
             todos = result.all()
 
-            # Handle empty result
-            if not todos:
-                return f"Found 0 todos matching '{sanitized_keyword}'. No results."
-
-            # Format response with all todo details
-            count = len(todos)
-            response_lines = [f"Found {count} todo{'s' if count != 1 else ''} matching '{sanitized_keyword}':"]
-
-            for todo in todos:
-                # Format each todo with ID, title, description (if exists), status, created_at
-                todo_line = f"[{todo.id}] {todo.title}"
-                if todo.description:
-                    todo_line += f" - {todo.description}"
-                todo_line += f" ({todo.status.value})"
-                todo_line += f" - Created: {todo.created_at.strftime('%Y-%m-%d %H:%M:%S UTC')}"
-                response_lines.append(todo_line)
-
-            return "\n".join(response_lines)
+            serialized = [_serialize_todo(todo) for todo in todos]
+            total = len(serialized)
+            return {
+                "todos": serialized,
+                "total": total,
+                "limit": total,
+                "offset": 0,
+                "query": sanitized_keyword,
+            }
 
         except Exception as e:
             raise Exception(f"Database error while searching todos: {str(e)}")
@@ -195,24 +200,15 @@ def _search_todos_impl(keyword: str, _test_session: Optional[Session] = None) ->
                 result = session.exec(statement)
                 todos = result.all()
 
-                # Handle empty result
-                if not todos:
-                    return f"Found 0 todos matching '{sanitized_keyword}'. No results."
-
-                # Format response with all todo details
-                count = len(todos)
-                response_lines = [f"Found {count} todo{'s' if count != 1 else ''} matching '{sanitized_keyword}':"]
-
-                for todo in todos:
-                    # Format each todo with ID, title, description (if exists), status, created_at
-                    todo_line = f"[{todo.id}] {todo.title}"
-                    if todo.description:
-                        todo_line += f" - {todo.description}"
-                    todo_line += f" ({todo.status.value})"
-                    todo_line += f" - Created: {todo.created_at.strftime('%Y-%m-%d %H:%M:%S UTC')}"
-                    response_lines.append(todo_line)
-
-                return "\n".join(response_lines)
+                serialized = [_serialize_todo(todo) for todo in todos]
+                total = len(serialized)
+                return {
+                    "todos": serialized,
+                    "total": total,
+                    "limit": total,
+                    "offset": 0,
+                    "query": sanitized_keyword,
+                }
 
             except Exception as e:
                 raise Exception(f"Database error while searching todos: {str(e)}")
@@ -220,7 +216,7 @@ def _search_todos_impl(keyword: str, _test_session: Optional[Session] = None) ->
 
 # Create MCP tool wrapper that excludes test parameter
 @mcp.tool
-def search_todos(keyword: str) -> str:
+def search_todos(keyword: str) -> dict:
     """Searches active todos by keyword in title or description.
 
     Performs case-insensitive search across title and description fields.
@@ -230,6 +226,6 @@ def search_todos(keyword: str) -> str:
         keyword: Search keyword (case-insensitive, searches title and description)
 
     Returns:
-        str: Summary and list of matching todos with details
+        dict: Structured list of matching todos
     """
     return _search_todos_impl(keyword=keyword, _test_session=None)

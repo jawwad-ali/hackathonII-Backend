@@ -223,8 +223,7 @@ async def get_discovered_tools(mcp_server: MCPServerStdio) -> List[str]:
 
     try:
         # Query MCP server for available tools
-        # The MCPServerStdio provides a tools property or list_tools() method
-        # depending on the SDK version
+        # The MCPServerStdio.list_tools() returns a direct list of tools
         tools = await mcp_server.list_tools()
 
         tool_names = [tool.name for tool in tools]
