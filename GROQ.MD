@@ -7,8 +7,6 @@ load_dotenv()
 # 1. Setup Groq API Key
 # Get this for free at https://console.groq.com/
 # groq_api_key = os.getenv("GROQ_API_KEY")
-groq_api_key = "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"
-
 
 if not groq_api_key:
     raise ValueError("GROQ_API_KEY is not set in your .env file.")
