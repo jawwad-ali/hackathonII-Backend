@@ -5,7 +5,7 @@ with exponential backoff, jitter, and timeout limits.
 
 This module defines retry strategies for:
 - MCP Server calls (more tolerant, longer timeouts)
-- Groq API calls (stricter limits due to rate limiting)
+- LLM API calls (OpenAI, etc.)
 """
 
 from tenacity import (
@@ -81,47 +81,43 @@ def create_mcp_retry_decorator():
     )
 
 
-def create_groq_retry_decorator():
-    """Create retry decorator for Groq API calls
+def create_llm_retry_decorator():
+    """Create retry decorator for LLM API calls (OpenAI, etc.)
 
     Configuration:
-        - Max attempts: 3 (stricter due to API rate limits)
+        - Max attempts: 3
         - Exponential backoff: 2s → 4s → 8s (with jitter)
-        - Max wait: 60 seconds
+        - Max wait: 30 seconds
         - Jitter: Random 0-2 seconds added
 
     Retries on:
-        - ConnectionError (API unreachable)
+        - ConnectionError (API server unreachable)
         - TimeoutError (API slow/unresponsive)
         - OSError (Network issues)
 
-    Note: Does NOT retry on rate limit errors (429) - those should be handled
-    separately by circuit breaker or caller logic.
-
     Usage:
-        @create_groq_retry_decorator()
-        async def call_groq_api(messages: list):
-            return await groq_client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+        @create_llm_retry_decorator()
+        async def call_openai_api(messages: list):
+            return await openai_client.chat.completions.create(
+                model="gpt-4o-mini",
                 messages=messages
             )
 
     Returns:
-        Tenacity retry decorator configured for Groq API calls
+        Tenacity retry decorator configured for LLM API calls
     """
     return retry(
         # Stop after 3 attempts (1 initial + 2 retries)
-        # Lower than MCP due to external API rate limits
         stop=stop_after_attempt(3),
 
-        # Exponential backoff with longer initial wait
+        # Exponential backoff
         # Attempt 1: 2s + jitter
         # Attempt 2: 4s + jitter
-        # Attempt 3: 8s + jitter (capped at 60s)
+        # Attempt 3: 8s + jitter (capped at 30s)
         wait=wait_exponential(
             multiplier=2,
             min=2,
-            max=60
+            max=30
         ),
 
         # Only retry on specific exceptions
@@ -146,7 +142,7 @@ def create_custom_retry_decorator(
     """Create custom retry decorator with configurable parameters
 
     Allows fine-tuning retry behavior for specific use cases beyond
-    the standard MCP and Groq configurations.
+    the standard MCP and LLM API configurations.
 
     Args:
         max_attempts: Maximum number of retry attempts (default: 3)
@@ -179,7 +175,11 @@ def create_custom_retry_decorator(
 
 # Convenience decorators for direct use
 mcp_retry = create_mcp_retry_decorator()
-groq_retry = create_groq_retry_decorator()
+llm_retry = create_llm_retry_decorator()
+
+# Backward compatibility aliases
+ollama_retry = llm_retry  # Legacy alias
+groq_retry = llm_retry    # Legacy alias
 
 
 # Usage Examples (for documentation):
@@ -192,14 +192,14 @@ Example 1: MCP Server Call with Retry
     async def fetch_todos_from_mcp():
         return await mcp_client.call_tool("list_todos", {})
 
-Example 2: Groq API Call with Retry
+Example 2: OpenAI API Call with Retry
 
-    from src.resilience.retry import groq_retry
+    from src.resilience.retry import llm_retry
 
-    @groq_retry
+    @llm_retry
     async def generate_response(prompt: str):
-        return await groq_client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+        return await openai_client.chat.completions.create(
+            model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}]
         )
 

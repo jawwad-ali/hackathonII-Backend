@@ -2,43 +2,23 @@
 Todo Agent Definition
 Defines the OpenAI Agents SDK agent for natural language todo management
 
-Includes circuit breaker and retry logic for Groq API resilience.
+Includes circuit breaker and retry logic for OpenAI API resilience.
 """
 
 from agents import (
     Agent,
-    set_default_openai_client,
-    set_tracing_disabled,
-    OpenAIChatCompletionsModel,
     function_tool,
     ModelSettings,
 )
 from agents.mcp import MCPServerStdio
-from typing import List, Any, Dict, Optional, Literal, Union
-from src.config import get_groq_client, get_groq_circuit_breaker, settings
+from typing import List, Any, Dict, Optional, Union
+import json
+from src.config import get_openai_model, get_llm_circuit_breaker, settings
 from src.resilience.circuit_breaker import CircuitBreakerError
-from src.resilience.retry import groq_retry
+from src.resilience.retry import llm_retry
 import logging
 
 logger = logging.getLogger(__name__)
-
-
-# Disable OpenAI tracing to prevent 401 errors when using Groq API
-# The OpenAI Agents SDK has built-in tracing that tries to send telemetry to OpenAI's servers
-# Since we're using Groq (not OpenAI), this would cause authentication failures
-set_tracing_disabled(True)
-
-# Configure the OpenAI Agents SDK to use Llama via Groq's AsyncOpenAI
-# This sets the default client for all agents created in this module
-groq_client = get_groq_client()
-set_default_openai_client(groq_client)
-
-# Create OpenAI Chat Completions Model for Llama 3.3 70B via Groq
-# Reference: https://console.groq.com/docs/models
-groq_model = OpenAIChatCompletionsModel(
-    model=settings.GROQ_MODEL,
-    openai_client=groq_client,
-)
 
 
 # System instructions for the TodoAgent
@@ -336,7 +316,18 @@ Key behaviors:
 """
 
 TODO_AGENT_INSTRUCTIONS_COMPACT = """
-You are a todo management assistant. Convert the user's message into one or more tool calls, then respond concisely using the tool results.
+You are a todo management assistant. Convert the user's message into one or more tool calls, then respond concisely.
+
+CRITICAL RESPONSE RULES:
+- NEVER echo, quote, or repeat raw JSON or tool output messages
+- NEVER include technical fields like "deleted_id", "success", "message" verbatim
+- For CREATE: Say "Done! I've added [title] to your list."
+- For LIST: The formatted list is shown automatically. Just add a brief intro like "Here are your todos:" or say nothing extra.
+- For UPDATE: Say "Done! I've updated [what changed]."
+- For DELETE: Say "Done! I've deleted [count] todo(s)." or "Deleted!" for single items.
+- For confirmation_required: Tell the user how many items will be affected and ask them to confirm.
+- Keep responses SHORT (1-2 sentences max)
+- If an error occurs, explain simply without technical details
 
 Available tools:
 - create_todo(title, description?, due_date?, priority?, tags?)
@@ -372,15 +363,17 @@ UPDATE:
 
 DELETE:
 - delete_todo supports todo_id, todo_ids, status, priority, keyword, confirm.
+- IMPORTANT: Make only ONE delete_todo call per operation. Do NOT call it multiple times with different parameters.
+- IMPORTANT: Do NOT use search_todos for delete operations. search_todos only finds ACTIVE todos. Use delete_todo(keyword="...") instead - it searches ALL statuses.
 - If user specifies a todo by ID ("delete todo 5"), call delete_todo(todo_id=5).
-- If user specifies a todo by title/description, use delete_todo(keyword="...") or search_todos(keyword) -> delete_todo(todo_id=...).
-- For deleting by status/priority ("remove all completed", "clear archived"), call delete_todo(status="completed"/"archived", confirm=true if user explicitly says delete all/remove all/clear all).
-- For mass delete (3+ todos), set confirm=true only when the user explicitly confirms; otherwise ask for confirmation and wait.
+- If user specifies a todo by title/description, call delete_todo(keyword="...") directly. Do NOT use search_todos first.
+- For mass delete by filters (e.g., "delete all completed"), call delete_todo(status="completed") directly.
+- For 3+ matches, delete_todo returns confirmation_required. After user confirms, call delete_todo with the SAME filter parameters plus confirm=true.
 - Examples:
   - "Delete the task about organizing my desk" -> delete_todo(keyword="organizing my desk")
   - "Delete todo number 5" -> delete_todo(todo_id=5)
-  - "Remove all completed todos" -> delete_todo(status="completed", confirm=true)
-  - "Clear out all my archived tasks" -> delete_todo(status="archived", confirm=true)
+  - "Remove all completed todos" -> delete_todo(status="completed") [returns count, asks for confirm]
+  - User says "yes" after seeing count -> delete_todo(status="completed", confirm=true)
 """
 
 
@@ -396,8 +389,7 @@ async def create_todo_agent(
     - Conversational response generation
 
     MCP tools are registered dynamically when mcp_servers parameter is provided.
-    Due to Groq API limitations with MCP protocol, tools are manually discovered
-    and registered as Function tools.
+    Tools are manually discovered and registered as Function tools for the agent.
 
     Args:
         mcp_servers: Optional list of MCPServerStdio instances for tool discovery.
@@ -418,9 +410,8 @@ async def create_todo_agent(
         >>> # Create agent without tools (for testing)
         >>> agent = await create_todo_agent()
     """
-    # NOTE: Groq uses the OpenAI ChatCompletions API, which does NOT support Hosted tools
-    # (including raw MCP `mcp.types.Tool` objects). We expose MCP tools to the model as
-    # Function tools that proxy to `MCPServerStdio.call_tool(...)`.
+    # We expose MCP tools to the model as Function tools that proxy to
+    # `MCPServerStdio.call_tool(...)` for better control and compatibility.
     mcp_server: Optional[MCPServerStdio] = mcp_servers[0] if mcp_servers else None
 
     discovered_tool_names: List[str] = []
@@ -466,6 +457,11 @@ async def create_todo_agent(
         return str(result)
 
     async def _call_mcp_tool(tool_name: str, args: Dict[str, Any]) -> str:
+        """Call MCP tool and return result as JSON string.
+
+        OpenAI function tools require string output, so we serialize
+        dict/list results to JSON strings.
+        """
         if mcp_server is None:
             raise ConnectionError("MCP server is not available (degraded mode)")
 
@@ -475,7 +471,12 @@ async def create_todo_agent(
         payload = _extract_mcp_result(result)
         if is_error:
             raise RuntimeError(str(payload))
-        return payload
+
+        # OpenAI function tools expect string output
+        # Serialize dict/list to JSON string
+        if isinstance(payload, (dict, list)):
+            return json.dumps(payload, default=str)
+        return str(payload)
 
     tools = []
     if mcp_server is not None:
@@ -516,7 +517,7 @@ async def create_todo_agent(
             priority: Optional[Union[str, List[str]]] = None,
             limit: Optional[int] = None,
             offset: Optional[int] = None,
-        ) -> Any:
+        ) -> str:
             """List todo items with optional filters.
 
             By default (no filters), returns only active todos. Supports filtering by
@@ -575,18 +576,17 @@ async def create_todo_agent(
             return await _call_mcp_tool("update_todo", args)
 
         @function_tool(strict_mode=False)
-        async def search_todos(keyword: str) -> Any:
-            """Search active todos by keyword in title or description.
+        async def search_todos(keyword: str) -> str:
+            """Search ACTIVE todos only by keyword in title or description.
 
-            Use this to find a todo when the user mentions it by name/title.
-            Returns a structured list with todo IDs which can be used with delete_todo or update_todo.
-            NOTE: Only searches ACTIVE todos. Use list_todos(status=...) for completed/archived.
+            WARNING: Only searches ACTIVE todos. Does NOT find completed/archived todos.
+            For DELETE operations, use delete_todo(keyword="...") instead - it searches ALL statuses.
 
             Args:
                 keyword: Search term to match in title or description
 
             Returns:
-                Structured list of matching todos with their IDs
+                Structured list of matching ACTIVE todos with their IDs
             """
             return await _call_mcp_tool("search_todos", {"keyword": keyword})
 
@@ -599,7 +599,7 @@ async def create_todo_agent(
             priority: Optional[Union[str, List[str]]] = None,
             keyword: Optional[str] = None,
             confirm: Optional[bool] = None,
-        ) -> Any:
+        ) -> str:
             """Delete todos by ID or filter.
 
             Supports single ID, multiple IDs, or filter-based deletion using
@@ -700,29 +700,33 @@ async def create_todo_agent(
                 if keyword:
                     if "status" not in list_args:
                         list_args["status"] = "all"
-                    list_result = await _call_mcp_tool("list_todos", list_args)
+                    list_result_str = await _call_mcp_tool("list_todos", list_args)
+                    # Parse JSON string back to dict for internal processing
+                    list_result = json.loads(list_result_str) if isinstance(list_result_str, str) else list_result_str
                     list_result = _validate_list_result(list_result)
                     resolved_ids = _filter_ids_by_keyword(
                         _extract_items(list_result),
                         keyword,
                     )
                 elif list_args:
-                    list_result = await _call_mcp_tool("list_todos", list_args)
+                    list_result_str = await _call_mcp_tool("list_todos", list_args)
+                    # Parse JSON string back to dict for internal processing
+                    list_result = json.loads(list_result_str) if isinstance(list_result_str, str) else list_result_str
                     list_result = _validate_list_result(list_result)
                     resolved_ids = _extract_ids(_extract_items(list_result))
 
             if not resolved_ids:
-                return {
+                return json.dumps({
                     "success": False,
                     "deleted_id": None,
                     "deleted_ids": [],
                     "deleted_count": 0,
                     "requested_count": 0,
                     "message": "No todos matched the deletion criteria.",
-                }
+                })
 
             if len(resolved_ids) >= 3 and not confirm:
-                return {
+                return json.dumps({
                     "success": False,
                     "confirmation_required": True,
                     "deleted_id": None,
@@ -733,14 +737,16 @@ async def create_todo_agent(
                         f"This will delete {len(resolved_ids)} todos. "
                         "Please confirm to proceed."
                     ),
-                }
+                })
 
             deleted_ids: List[int] = []
             errors: List[str] = []
 
             for todo_id_value in resolved_ids:
                 try:
-                    result = await _call_mcp_tool("delete_todo", {"id": todo_id_value})
+                    result_str = await _call_mcp_tool("delete_todo", {"id": todo_id_value})
+                    # Parse JSON string back to dict to check success status
+                    result = json.loads(result_str) if isinstance(result_str, str) else result_str
                     success = True
                     if isinstance(result, dict):
                         success = result.get("success", True)
@@ -766,7 +772,7 @@ async def create_todo_agent(
                 else:
                     message = "Failed to delete todos."
 
-            return {
+            return json.dumps({
                 "success": success,
                 "deleted_id": deleted_ids[0] if len(deleted_ids) == 1 else None,
                 "deleted_ids": deleted_ids,
@@ -774,7 +780,7 @@ async def create_todo_agent(
                 "requested_count": len(resolved_ids),
                 "errors": errors or None,
                 "message": message,
-            }
+            })
 
         tools = [create_todo, list_todos, update_todo, search_todos, delete_todo]
 
@@ -784,24 +790,25 @@ async def create_todo_agent(
             if isinstance(schema, dict) and schema.get("title") != tool.name:
                 schema["title"] = tool.name
 
-    # Do NOT pass `mcp_servers` into the Agent when using ChatCompletions + Groq.
-    # The model can only see and call Function tools; MCP is used under the hood.
+    # Create agent with OpenAI model (direct API access)
+    # The OpenAI Agents SDK automatically uses OPENAI_API_KEY env var
+    # Model is configured via OPENAI_MODEL in .env
+    openai_model = get_openai_model()
+
     agent = Agent(
         name="TodoAgent",
-        model=groq_model,
-        instructions=TODO_AGENT_INSTRUCTIONS_COMPACT,  # Use compact instructions (full might be too verbose for Groq)
+        model=openai_model,
+        instructions=TODO_AGENT_INSTRUCTIONS_COMPACT,
         tools=tools,
         mcp_servers=[],
-        # Removed tool_use_behavior to allow all operations to complete properly
         model_settings=ModelSettings(
             max_tokens=settings.AGENT_MAX_OUTPUT_TOKENS,
-            parallel_tool_calls=False,
         ),
     )
 
     logger.info(
         f"TodoAgent created with {1 if mcp_server else 0} MCP server(s) - "
-        f"Registered {len(tools)} Function tool(s) for Groq",
+        f"Registered {len(tools)} Function tool(s) using OpenAI model: {openai_model}",
         extra={
             "mcp_servers_count": 1 if mcp_server else 0,
             "discovered_tools_count": len(discovered_tool_names),
@@ -809,6 +816,7 @@ async def create_todo_agent(
             "registered_tools_count": len(tools),
             "registered_tools": [t.name for t in tools] if tools else [],
             "agent_name": "TodoAgent",
+            "model": openai_model,
             "degraded_mode": mcp_server is None,
         },
     )
@@ -816,18 +824,18 @@ async def create_todo_agent(
     return agent
 
 
-@groq_retry
+@llm_retry
 async def _execute_agent_with_retry(
     agent: Agent, input_text: str, context: Any = None
 ) -> Any:
     """
     Internal function to execute agent with retry logic.
 
-    This function is wrapped with @groq_retry decorator for exponential backoff:
+    This function is wrapped with retry decorator for exponential backoff:
     - Max attempts: 3
     - Exponential backoff: 2s → 4s → 8s (with jitter)
-    - Max wait: 60 seconds
-    - Timeout: 30 seconds per attempt (T084)
+    - Max wait: 30 seconds
+    - Timeout: configured via REQUEST_TIMEOUT setting
 
     T028: Includes tool call validation logging for all MCP tool executions:
     - Log tool name
@@ -847,21 +855,19 @@ async def _execute_agent_with_retry(
         ConnectionError, TimeoutError, OSError: Network/API errors (triggers retry)
         Other exceptions: Passed through without retry
     """
-    from agents_mcp import Runner
+    from agents import Runner
     import asyncio
     import time
 
-    # T084: Groq API timeout constant (30 seconds)
-    # This ensures each Groq API call completes within reasonable time
-    GROQ_TIMEOUT_SECONDS = 30
+    # OpenAI API timeout - configured via REQUEST_TIMEOUT setting
+    OPENAI_TIMEOUT_SECONDS = settings.REQUEST_TIMEOUT
 
     # T028: Track execution start time for duration logging
     execution_start_time = time.time()
 
     try:
-        # T084: Wrap agent execution with timeout to prevent hanging on slow Groq API
-        # Note: AsyncOpenAI client also has timeout configured, this is a safety net
-        async with asyncio.timeout(GROQ_TIMEOUT_SECONDS):
+        # Wrap agent execution with timeout to prevent hanging on slow API calls
+        async with asyncio.timeout(OPENAI_TIMEOUT_SECONDS):
             # Execute agent with MCP context
             if context:
                 result = await Runner.run(agent, input=input_text, context=context)
@@ -877,19 +883,19 @@ async def _execute_agent_with_retry(
             return result
 
     except asyncio.TimeoutError as e:
-        # T084: Timeout handling - convert to TimeoutError for retry logic
+        # Timeout handling - convert to TimeoutError for retry logic
         execution_duration = time.time() - execution_start_time
 
         logger.warning(
-            f"Groq API call timed out after {GROQ_TIMEOUT_SECONDS}s (will retry)",
+            f"OpenAI API call timed out after {OPENAI_TIMEOUT_SECONDS}s (will retry)",
             extra={
                 "execution_duration_seconds": execution_duration,
-                "timeout_seconds": GROQ_TIMEOUT_SECONDS,
+                "timeout_seconds": OPENAI_TIMEOUT_SECONDS,
                 "result_status": "timeout",
             },
         )
         raise TimeoutError(
-            f"Groq API execution exceeded timeout of {GROQ_TIMEOUT_SECONDS}s"
+            f"OpenAI API execution exceeded timeout of {OPENAI_TIMEOUT_SECONDS}s"
         ) from e
 
     except (ConnectionError, TimeoutError, OSError) as e:
@@ -897,7 +903,7 @@ async def _execute_agent_with_retry(
         execution_duration = time.time() - execution_start_time
 
         logger.warning(
-            f"Groq API call failed (will retry): {e}",
+            f"OpenAI API call failed (will retry): {e}",
             extra={
                 "execution_duration_seconds": execution_duration,
                 "result_status": "failed",
@@ -1045,13 +1051,13 @@ async def execute_agent_with_resilience(
     Execute TodoAgent with circuit breaker and retry logic for resilience.
 
     This function wraps agent execution with:
-    - Circuit breaker pattern (fail-fast when Groq API is down)
+    - Circuit breaker pattern (fail-fast when OpenAI API is down)
     - Exponential backoff retry (3 attempts with jitter)
 
     The resilience layers protect against:
-    - Groq API rate limiting
+    - OpenAI API unavailability
     - Network transient failures
-    - Temporary API unavailability
+    - Rate limiting issues
 
     Args:
         agent: The TodoAgent instance
@@ -1077,7 +1083,7 @@ async def execute_agent_with_resilience(
         ... else:
         ...     print(f"Error: {result['message']}")
     """
-    circuit_breaker = get_groq_circuit_breaker()
+    circuit_breaker = get_llm_circuit_breaker()
 
     try:
         # Circuit breaker wraps retry logic
@@ -1088,7 +1094,7 @@ async def execute_agent_with_resilience(
         return {"success": True, "result": result}
 
     except CircuitBreakerError as e:
-        logger.error(f"Circuit breaker open for Groq API: {e}")
+        logger.error(f"Circuit breaker open for OpenAI API: {e}")
         return {
             "success": False,
             "error": "circuit_breaker_open",

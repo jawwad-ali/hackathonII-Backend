@@ -4,7 +4,7 @@ Performance Metrics Tracking
 Implements timing metrics for key events in the request lifecycle:
 - request_received: When a request first arrives
 - mcp_tool_called: When an MCP tool is invoked
-- groq_api_called: When Groq API is called
+- llm_api_called: When LLM API (OpenAI) is called
 - request_completed: When a request finishes processing
 
 Features:
@@ -22,8 +22,8 @@ Usage:
     # Track MCP tool call
     metrics_tracker.track_mcp_tool_called(request_id, tool_name, duration_ms)
 
-    # Track Groq API call
-    metrics_tracker.track_groq_api_called(request_id, duration_ms)
+    # Track LLM API call
+    metrics_tracker.track_llm_api_called(request_id, duration_ms)
 
     # Track request completion
     metrics_tracker.track_request_completed(request_id, duration_ms, success=True)
@@ -72,7 +72,7 @@ class RequestMetrics:
     completed_at: Optional[float] = None
     success: bool = False
     mcp_calls: int = 0
-    groq_calls: int = 0
+    llm_calls: int = 0
     total_duration_ms: Optional[float] = None
 
 
@@ -83,7 +83,7 @@ class MetricsTracker:
     Tracks timing metrics for key events:
     - request_received: Request arrival time
     - mcp_tool_called: MCP tool invocation with duration
-    - groq_api_called: Groq API call with duration
+    - llm_api_called: LLM API (OpenAI) call with duration
     - request_completed: Request completion with success status
 
     Thread-safe for concurrent request processing.
@@ -96,7 +96,7 @@ class MetricsTracker:
         # Event-level metrics
         self._request_received = EventMetrics()
         self._mcp_tool_called = EventMetrics()
-        self._groq_api_called = EventMetrics()
+        self._llm_api_called = EventMetrics()
         self._request_completed = EventMetrics()
 
         # Request-level metrics (keyed by request_id)
@@ -158,9 +158,9 @@ class MetricsTracker:
             if request_id in self._requests:
                 self._requests[request_id].mcp_calls += 1
 
-    def track_groq_api_called(self, request_id: str, duration_ms: float) -> None:
+    def track_llm_api_called(self, request_id: str, duration_ms: float) -> None:
         """
-        Track when Groq API is called.
+        Track when LLM API (OpenAI) is called.
 
         Args:
             request_id: Request identifier for correlation
@@ -169,9 +169,9 @@ class MetricsTracker:
         timestamp = time.time()
 
         with self._lock:
-            self._groq_api_called.count += 1
-            self._groq_api_called.total_duration_ms += duration_ms
-            self._groq_api_called.events.append(
+            self._llm_api_called.count += 1
+            self._llm_api_called.total_duration_ms += duration_ms
+            self._llm_api_called.events.append(
                 {
                     "request_id": request_id,
                     "duration_ms": duration_ms,
@@ -181,7 +181,7 @@ class MetricsTracker:
 
             # Update request metrics
             if request_id in self._requests:
-                self._requests[request_id].groq_calls += 1
+                self._requests[request_id].llm_calls += 1
 
     def track_request_completed(
         self, request_id: str, duration_ms: float, success: bool = True
@@ -231,7 +231,7 @@ class MetricsTracker:
             - failed_requests: Number of failed requests
             - request_received: Metrics for request_received events
             - mcp_tool_called: Metrics for MCP tool calls
-            - groq_api_called: Metrics for Groq API calls
+            - llm_api_called: Metrics for LLM API (OpenAI) calls
             - request_completed: Metrics for completed requests
         """
         with self._lock:
@@ -247,10 +247,10 @@ class MetricsTracker:
                     "total_duration_ms": self._mcp_tool_called.total_duration_ms,
                     "avg_duration_ms": self._mcp_tool_called.avg_duration_ms,
                 },
-                "groq_api_called": {
-                    "count": self._groq_api_called.count,
-                    "total_duration_ms": self._groq_api_called.total_duration_ms,
-                    "avg_duration_ms": self._groq_api_called.avg_duration_ms,
+                "llm_api_called": {
+                    "count": self._llm_api_called.count,
+                    "total_duration_ms": self._llm_api_called.total_duration_ms,
+                    "avg_duration_ms": self._llm_api_called.avg_duration_ms,
                 },
                 "request_completed": {
                     "count": self._request_completed.count,
@@ -281,7 +281,7 @@ class MetricsTracker:
         with self._lock:
             self._request_received = EventMetrics()
             self._mcp_tool_called = EventMetrics()
-            self._groq_api_called = EventMetrics()
+            self._llm_api_called = EventMetrics()
             self._request_completed = EventMetrics()
             self._requests.clear()
             self._total_requests = 0

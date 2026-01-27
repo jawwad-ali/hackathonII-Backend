@@ -120,7 +120,7 @@ class HealthResponse(BaseModel):
                 "status": "healthy",
                 "circuit_breakers": {
                     "mcp_server": "closed",
-                    "groq_api": "closed"
+                    "openai_api": "closed"
                 },
                 "uptime_seconds": 3600.5,
                 "metrics": {

@@ -2,14 +2,12 @@
 Configuration Management
 Loads and validates environment variables using Pydantic Settings
 
-Includes circuit breaker for Groq API calls to prevent cascading failures.
+Includes circuit breaker for OpenAI API calls to prevent cascading failures.
 """
 
 from pydantic_settings import BaseSettings
 from pydantic import Field, field_validator
 from typing import List
-import os
-# from openai import AsyncOpenAI
 from datetime import timedelta
 
 
@@ -17,16 +15,13 @@ from datetime import timedelta
 from src.resilience.circuit_breaker import (
     CircuitBreaker,
     CircuitBreakerConfig,
-    CircuitBreakerError
 )
-from src.resilience.retry import groq_retry
-from agents import AsyncOpenAI, OpenAIChatCompletionsModel, RunConfig
 
 class Settings(BaseSettings):
     """
     Application settings loaded from environment variables.
     Uses python-dotenv to load from .env file if present.
-    """
+"""
 
     # Application Configuration
     APP_ENV: str = Field(default="development", description="Application environment")
@@ -34,14 +29,14 @@ class Settings(BaseSettings):
     APP_PORT: int = Field(default=8000, description="Application port")
     LOG_LEVEL: str = Field(default="INFO", description="Logging level")
 
-    # Groq API Configuration (Llama via Groq)
-    GROQ_API_KEY: str = Field(..., description="Groq API key")
-    GROQ_BASE_URL: str = Field(
-        default="https://api.groq.com/openai/v1",
-        description="Groq OpenAI-compatible base URL",
+    # OpenAI Configuration
+    OPENAI_API_KEY: str = Field(
+        default="",
+        description="OpenAI API key (required)",
     )
-    GROQ_MODEL: str = Field(
-        default="llama-3.3-70b-versatile", description="Groq model name (Llama)"
+    OPENAI_MODEL: str = Field(
+        default="gpt-4.1-nano",
+        description="OpenAI model name (configured via .env)",
     )
 
     # MCP Server Configuration
@@ -51,7 +46,7 @@ class Settings(BaseSettings):
         description="MCP server arguments (comma-separated)",
     )
     MCP_SERVER_TIMEOUT: int = Field(
-        default=5, description="MCP server timeout in seconds"
+        default=60, description="MCP server timeout in seconds"
     )
     MCP_TRANSPORT_TYPE: str = Field(
         default="stdio", description="MCP transport type (stdio or sse)"
@@ -64,11 +59,11 @@ class Settings(BaseSettings):
     CIRCUIT_BREAKER_MCP_RECOVERY_TIMEOUT: int = Field(
         default=30, description="MCP circuit breaker recovery timeout in seconds"
     )
-    CIRCUIT_BREAKER_GROQ_FAILURE_THRESHOLD: int = Field(
-        default=3, description="Groq circuit breaker failure threshold"
+    CIRCUIT_BREAKER_LLM_FAILURE_THRESHOLD: int = Field(
+        default=3, description="LLM (OpenAI) circuit breaker failure threshold"
     )
-    CIRCUIT_BREAKER_GROQ_RECOVERY_TIMEOUT: int = Field(
-        default=60, description="Groq circuit breaker recovery timeout in seconds"
+    CIRCUIT_BREAKER_LLM_RECOVERY_TIMEOUT: int = Field(
+        default=30, description="LLM (OpenAI) circuit breaker recovery timeout in seconds"
     )
 
     # Performance Configuration
@@ -87,7 +82,7 @@ class Settings(BaseSettings):
         default=4, description="Maximum agent turns per request"
     )
     AGENT_MAX_OUTPUT_TOKENS: int = Field(
-        default=512, description="Maximum output tokens per model call"
+        default=1024, description="Maximum output tokens per model call"
     )
 
     @field_validator("MCP_SERVER_ARGS")
@@ -160,16 +155,16 @@ class Settings(BaseSettings):
 # Global settings instance
 settings = Settings()
 
-# Global circuit breaker for Groq API
+# Global circuit breaker for OpenAI API
 # Configuration:
-# - 3 consecutive failures before opening (stricter due to external API)
-# - 60 second recovery timeout (longer for external API)
+# - 3 consecutive failures before opening
+# - 30 second recovery timeout
 # - 2 test calls in half-open state
-_groq_circuit_breaker = CircuitBreaker(
-    name="groq_api",
+_llm_circuit_breaker = CircuitBreaker(
+    name="openai_api",
     config=CircuitBreakerConfig(
-        failure_threshold=3,
-        recovery_timeout=timedelta(seconds=60),
+        failure_threshold=settings.CIRCUIT_BREAKER_LLM_FAILURE_THRESHOLD,
+        recovery_timeout=timedelta(seconds=settings.CIRCUIT_BREAKER_LLM_RECOVERY_TIMEOUT),
         half_open_max_calls=2
     )
 )
@@ -191,58 +186,19 @@ def get_mcp_server_config() -> dict:
     }
 
 
-def get_groq_config() -> dict:
+def get_openai_model() -> str:
     """
-    Get Groq API configuration for AsyncOpenAI client.
+    Get the configured OpenAI model name from OPENAI_MODEL env var.
 
     Returns:
-        dict: Groq configuration dictionary with api_key, base_url, model
+        str: OpenAI model name as configured in .env
     """
-    return {
-        "api_key": settings.GROQ_API_KEY,
-        "base_url": settings.GROQ_BASE_URL,
-        "model": settings.GROQ_MODEL,
-    }
+    return settings.OPENAI_MODEL
 
 
-def get_groq_client() -> AsyncOpenAI:
+def get_llm_circuit_breaker() -> CircuitBreaker:
     """
-    Create and return an AsyncOpenAI client configured for Groq API with resilience.
-
-    This client bridges OpenAI Agents SDK to Groq's Llama models
-    by configuring a custom base_url pointing to Groq's OpenAI-compatible endpoint.
-
-    The client is wrapped with circuit breaker protection to prevent cascading failures
-    when the Groq API is unavailable or experiencing issues.
-
-    T084: Timeout configuration added to prevent hanging on slow API responses.
-    - Request timeout: 30 seconds (matches REQUEST_TIMEOUT setting)
-    - Connection timeout: 10 seconds for initial connection
-
-    Note: The circuit breaker is applied at the agent execution level, not at client
-    creation. This function creates a plain client that will be wrapped when used.
-
-    Returns:
-        AsyncOpenAI: Configured async OpenAI client for Groq with timeout
-
-    Example:
-        >>> client = get_groq_client()
-        >>> # Circuit breaker protection applied when agent makes API calls
-        >>> # Timeout of 30s enforced on all API requests
-    """
-    config = get_groq_config()
-
-    # T084: Configure timeout for Groq API requests
-    # This prevents the client from hanging indefinitely on slow/unresponsive API
-    return AsyncOpenAI(
-        api_key=config["api_key"],
-        base_url=config["base_url"],
-    )
-
-
-def get_groq_circuit_breaker() -> CircuitBreaker:
-    """
-    Get the Groq API circuit breaker for monitoring.
+    Get the LLM (OpenAI) API circuit breaker for monitoring.
 
     This function provides access to the circuit breaker instance for:
     - Health check endpoints
@@ -250,12 +206,12 @@ def get_groq_circuit_breaker() -> CircuitBreaker:
     - Manual circuit breaker reset (administrative use)
 
     Returns:
-        CircuitBreaker: The global Groq API circuit breaker
+        CircuitBreaker: The global OpenAI API circuit breaker
 
     Example:
-        >>> breaker = get_groq_circuit_breaker()
+        >>> breaker = get_llm_circuit_breaker()
         >>> state = breaker.get_state()
         >>> print(f"Circuit state: {state.state.value}")
         >>> print(f"Failure count: {state.failure_count}")
     """
-    return _groq_circuit_breaker
+    return _llm_circuit_breaker

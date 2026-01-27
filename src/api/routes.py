@@ -463,6 +463,7 @@ async def chat_stream_generator(
         # Map events to ChatKit SSE format using enhanced mapper (T028)
         # Note: detected_intent is initialized at function start to avoid UnboundLocalError
         tool_start_times = {}  # Track tool execution start times for duration calculation
+        last_tool_call_info = {}  # Track the last tool call for pairing with output events
 
         async for event in result.stream_events():
             event_type = type(event).__name__
@@ -479,16 +480,78 @@ async def chat_stream_generator(
             # T047: Stream thinking event showing parameter extraction reasoning
             # T051: Log mcp_tool_called event with create_todo details
             # T053: Detect LIST intent when list_todos tool is called (User Story 2)
-            if hasattr(event, 'tool_name'):
+            #
+            # Tool call detection for streaming:
+            # Events come via RunItemStreamEvent with item types:
+            # - ToolCallItem: contains raw_item.name and raw_item.arguments
+            # - ToolCallOutputItem: contains output attribute
+            tool_name = None
+            tool_args = {}
+            tool_result = None
+            is_tool_call_event = False
+            is_tool_output_event = False
+
+            # Check for RunItemStreamEvent (OpenAI Agents SDK streaming format)
+            if event_type == "RunItemStreamEvent" and hasattr(event, 'item'):
+                item = event.item
+                item_type = type(item).__name__
+
+                if item_type == "ToolCallItem":
+                    is_tool_call_event = True
+                    if hasattr(item, 'raw_item'):
+                        raw_item = item.raw_item
+                        tool_name = getattr(raw_item, 'name', None)
+                        args_str = getattr(raw_item, 'arguments', '{}')
+                        try:
+                            import json
+                            tool_args = json.loads(args_str) if isinstance(args_str, str) else args_str
+                        except (json.JSONDecodeError, TypeError):
+                            tool_args = {}
+
+                elif item_type == "ToolCallOutputItem":
+                    is_tool_output_event = True
+                    tool_result_raw = getattr(item, 'output', None)
+                    # Parse JSON string to dict if needed (MCP tools return JSON strings)
+                    if isinstance(tool_result_raw, str):
+                        try:
+                            tool_result = json.loads(tool_result_raw)
+                        except (json.JSONDecodeError, TypeError):
+                            tool_result = tool_result_raw
+                    else:
+                        tool_result = tool_result_raw
+                    # Retrieve tool name and args from last_tool_call_info (set during ToolCallItem)
+                    if last_tool_call_info:
+                        tool_name = last_tool_call_info.get('name')
+                        tool_args = last_tool_call_info.get('args', {})
+
+            # Legacy check for direct tool_name attribute (older SDK versions)
+            elif hasattr(event, 'tool_name'):
                 tool_name = event.tool_name
+                is_tool_call_event = True
+                tool_args = getattr(event, 'arguments', {})
+                if hasattr(event, 'result'):
+                    is_tool_output_event = True
+                    tool_result_raw = event.result
+                    # Parse JSON string to dict if needed
+                    if isinstance(tool_result_raw, str):
+                        try:
+                            tool_result = json.loads(tool_result_raw)
+                        except (json.JSONDecodeError, TypeError):
+                            tool_result = tool_result_raw
+                    else:
+                        tool_result = tool_result_raw
+
+            # Process tool call events
+            if is_tool_call_event and tool_name:
+                # Store tool call info for pairing with output events
+                last_tool_call_info = {'name': tool_name, 'args': tool_args}
 
                 # Track tool invocation start time (for duration calculation)
-                if not hasattr(event, 'result'):
-                    tool_start_times[tool_name] = time.time()
+                tool_start_times[tool_name] = time.time()
 
                 if tool_name == "create_todo" and detected_intent is None:
                     detected_intent = "CREATE"
-                    tool_args = getattr(event, 'arguments', {})
+                    # tool_args already extracted from RunItemStreamEvent detection above
 
                     logger.info(
                         "CREATE intent detected - create_todo tool called",
@@ -516,9 +579,12 @@ async def chat_stream_generator(
                         reasoning = f"I've extracted the following from your request: {' | '.join(extracted_params)}. Creating your todo now..."
                         yield stream_builder.add_thinking(reasoning)
 
+                    # NOTE: tool_call events are emitted by map_agent_event_to_chatkit()
+                    # Do NOT emit duplicate here
+
                 # T053: Detect LIST intent when list_todos tool is called (User Story 2)
                 elif tool_name == "list_todos" and detected_intent is None:
-                    tool_args = getattr(event, 'arguments', {})
+                    # tool_args already extracted from RunItemStreamEvent detection above
                     is_delete_lookup = context_state.get("delete_intent_in_message", False)
 
                     if is_delete_lookup:
@@ -586,20 +652,13 @@ async def chat_stream_generator(
                             reasoning = "I'm fetching your todo list..."
                             yield stream_builder.add_thinking(reasoning)
 
-                    # T056: Stream tool_call event with list_todos and extracted filter arguments
-                    # Note: Tool call events are automatically emitted by the OpenAI Agents SDK
-                    # and mapped to ChatKit format via map_agent_event_to_chatkit()
-                    # This explicit streaming ensures we have control over timing and content
-                    yield stream_builder.add_tool_call(
-                        tool_name="list_todos",
-                        arguments=tool_args,
-                        status=ToolStatus.IN_PROGRESS
-                    )
+                    # NOTE: tool_call events are emitted by map_agent_event_to_chatkit()
+                    # Do NOT emit duplicate here
 
                 # T062: Detect UPDATE intent when update_todo tool is called (User Story 3)
                 elif tool_name == "update_todo" and detected_intent is None:
                     detected_intent = "UPDATE"
-                    tool_args = getattr(event, 'arguments', {})
+                    # tool_args already extracted from RunItemStreamEvent detection above
 
                     logger.info(
                         "UPDATE intent detected - update_todo tool called",
@@ -642,18 +701,13 @@ async def chat_stream_generator(
                         reasoning = "I'm updating the todo..."
                         yield stream_builder.add_thinking(reasoning)
 
-                    # T066: Stream tool_call event with update_todo and extracted arguments
-                    # Explicit streaming for better UX control
-                    yield stream_builder.add_tool_call(
-                        tool_name="update_todo",
-                        arguments=tool_args,
-                        status=ToolStatus.IN_PROGRESS
-                    )
+                    # NOTE: tool_call events are emitted by map_agent_event_to_chatkit()
+                    # Do NOT emit duplicate here
 
                 # T071: Detect DELETE intent when delete_todo tool is called (User Story 4)
                 elif tool_name == "delete_todo":
                     detected_intent = "DELETE"
-                    tool_args = getattr(event, 'arguments', {})
+                    # tool_args already extracted from RunItemStreamEvent detection above
 
                     # T074: Check if this deletion follows a user confirmation
                     deletion_after_confirmation = (
@@ -715,340 +769,200 @@ async def chat_stream_generator(
 
                     yield stream_builder.add_thinking(reasoning)
 
-                    # T077: Stream tool_call event with delete_todo
-                    # Explicit streaming for better UX control
-                    yield stream_builder.add_tool_call(
-                        tool_name="delete_todo",
-                        arguments=tool_args,
-                        status=ToolStatus.IN_PROGRESS
-                    )
+                    # NOTE: tool_call events are emitted by map_agent_event_to_chatkit()
+                    # Do NOT emit duplicate here
 
-                # T051: Log mcp_tool_called event when tool execution completes
-                # Detect tool completion by checking for 'result' attribute
-                if hasattr(event, 'result'):
-                    # Calculate tool execution duration
-                    if tool_name in tool_start_times:
-                        tool_duration_ms = (time.time() - tool_start_times[tool_name]) * 1000
+            # T051: Log mcp_tool_called event when tool execution completes
+            # Detect tool completion via ToolCallOutputItem (is_tool_output_event)
+            if is_tool_output_event and tool_name:
+                # Calculate tool execution duration
+                if tool_name in tool_start_times:
+                    tool_duration_ms = (time.time() - tool_start_times[tool_name]) * 1000
+                else:
+                    # Estimate minimal duration if start time not captured
+                    tool_duration_ms = 1.0
+
+                # Track MCP tool call with metrics
+                metrics_tracker.track_mcp_tool_called(
+                    request_id=request_id,
+                    tool_name=tool_name,
+                    duration_ms=tool_duration_ms
+                )
+
+                # T051 & T060 & T069 & T080: Log mcp_tool_called event for observability (FR-011)
+                # This logs ALL MCP tool executions including:
+                # - create_todo (User Story 1) - T051
+                # - list_todos (User Story 2) - T060
+                # - update_todo (User Story 3) - T069
+                # - delete_todo (User Story 4) - T080
+                logger.info(
+                    "MCP tool execution completed",
+                    extra={
+                        "event": "mcp_tool_called",
+                        "request_id": request_id,
+                        "tool_name": tool_name,
+                        "tool_arguments": tool_args,
+                        "duration_ms": tool_duration_ms,
+                        "success": True
+                    }
+                )
+
+                # T063: Track created todo_id for potential reference in subsequent operations
+                if tool_name == "create_todo" and detected_intent == "CREATE":
+                    # Extract todo_id from result if available
+                    if isinstance(tool_result, dict) and 'id' in tool_result:
+                        context_state["last_created_todo_id"] = tool_result['id']
+                        logger.debug(
+                            "Stored created todo_id in context",
+                            extra={
+                                "request_id": request_id,
+                                "todo_id": tool_result['id']
+                            }
+                        )
+                    elif hasattr(tool_result, 'id'):
+                        context_state["last_created_todo_id"] = tool_result.id
+                        logger.debug(
+                            "Stored created todo_id in context",
+                            extra={
+                                "request_id": request_id,
+                                "todo_id": tool_result.id
+                            }
+                        )
+
+                # T063: Track updated todo_id for logging and context
+                if tool_name == "update_todo" and detected_intent == "UPDATE":
+                    # tool_args already set from last_tool_call_info
+                    if 'todo_id' in tool_args:
+                        context_state["last_updated_todo_id"] = tool_args['todo_id']
+                        logger.debug(
+                            "Stored updated todo_id in context",
+                            extra={
+                                "request_id": request_id,
+                                "todo_id": tool_args['todo_id']
+                            }
+                        )
+
+                # T078: Track delete_todo completion for observability (User Story 4)
+                # NOTE: We do NOT stream response_delta here - let the model generate
+                # the natural language response based on the tool output it receives.
+                # This prevents duplicate output (hardcoded message + model response).
+                if tool_name == "delete_todo" and detected_intent == "DELETE":
+                    # tool_result already set from ToolCallOutputItem
+
+                    # Extract deletion details for logging only
+                    success = False
+                    deleted_ids = []
+                    deleted_count = 0
+                    was_mass_deletion = context_state.get("potential_mass_deletion", False)
+
+                    if isinstance(tool_result, dict):
+                        success = tool_result.get('success', True)
+                        requested_count = tool_result.get("requested_count")
+                        deleted_count = tool_result.get("deleted_count", 0)
+                        deleted_ids = tool_result.get("deleted_ids") or []
+                        if not deleted_ids and tool_result.get('deleted_id'):
+                            deleted_ids = [tool_result.get('deleted_id')]
+
+                        if requested_count and requested_count >= 3:
+                            was_mass_deletion = True
                     else:
-                        # Estimate minimal duration if start time not captured
-                        tool_duration_ms = 1.0
+                        success = True
+                        if 'todo_id' in tool_args:
+                            deleted_ids = [tool_args.get('todo_id')]
+                        elif 'id' in tool_args:
+                            deleted_ids = [tool_args.get('id')]
+                        elif 'todo_ids' in tool_args:
+                            deleted_ids = tool_args.get('todo_ids') or []
+                        deleted_count = len(deleted_ids)
 
-                    # Track MCP tool call with metrics
-                    metrics_tracker.track_mcp_tool_called(
-                        request_id=request_id,
-                        tool_name=tool_name,
-                        duration_ms=tool_duration_ms
-                    )
-
-                    # T051 & T060 & T069 & T080: Log mcp_tool_called event for observability (FR-011)
-                    # This logs ALL MCP tool executions including:
-                    # - create_todo (User Story 1) - T051
-                    # - list_todos (User Story 2) - T060
-                    # - update_todo (User Story 3) - T069
-                    # - delete_todo (User Story 4) - T080
+                    # T080: Log deletion for observability (but don't stream response)
                     logger.info(
-                        "MCP tool execution completed",
+                        "DELETE operation completed",
                         extra={
-                            "event": "mcp_tool_called",
                             "request_id": request_id,
-                            "tool_name": tool_name,
-                            "tool_arguments": getattr(event, 'arguments', {}),
-                            "duration_ms": tool_duration_ms,
-                            "success": True
+                            "deleted_id": deleted_ids[0] if deleted_ids else None,
+                            "deleted_ids": deleted_ids if len(deleted_ids) > 1 else None,
+                            "deleted_count": deleted_count,
+                            "success": success,
+                            "was_mass_deletion": was_mass_deletion,
+                            "operation": "delete_todo_completed"
                         }
                     )
 
-                    # T063: Track created todo_id for potential reference in subsequent operations
-                    if tool_name == "create_todo" and detected_intent == "CREATE":
-                        tool_result = event.result
-                        # Extract todo_id from result if available
-                        if isinstance(tool_result, dict) and 'id' in tool_result:
-                            context_state["last_created_todo_id"] = tool_result['id']
-                            logger.debug(
-                                "Stored created todo_id in context",
-                                extra={
-                                    "request_id": request_id,
-                                    "todo_id": tool_result['id']
-                                }
-                            )
-                        elif hasattr(tool_result, 'id'):
-                            context_state["last_created_todo_id"] = tool_result.id
-                            logger.debug(
-                                "Stored created todo_id in context",
-                                extra={
-                                    "request_id": request_id,
-                                    "todo_id": tool_result.id
-                                }
-                            )
+                # T057 & T058: Format list_todos results and stream as response_delta events
+                if tool_name == "list_todos" and detected_intent == "LIST":
+                    # tool_result already set from ToolCallOutputItem
 
-                    # T063: Track updated todo_id for logging and context
-                    if tool_name == "update_todo" and detected_intent == "UPDATE":
-                        tool_args = getattr(event, 'arguments', {})
-                        if 'todo_id' in tool_args:
-                            context_state["last_updated_todo_id"] = tool_args['todo_id']
-                            logger.debug(
-                                "Stored updated todo_id in context",
-                                extra={
-                                    "request_id": request_id,
-                                    "todo_id": tool_args['todo_id']
-                                }
-                            )
+                    # T063: Store list results in context for potential todo_id inference
+                    # This allows subsequent update/delete operations in the same request
+                    # to reference "the first todo", "that task", etc.
+                    context_state["recent_list_results"] = tool_result
+                    result_count = 0
+                    if isinstance(tool_result, list):
+                        result_count = len(tool_result)
+                    elif isinstance(tool_result, dict) and isinstance(
+                        tool_result.get("todos"), list
+                    ):
+                        result_count = len(tool_result.get("todos"))
+                    logger.debug(
+                        "Stored list results in context for todo_id inference",
+                        extra={
+                            "request_id": request_id,
+                            "result_count": result_count
+                        }
+                    )
 
-                    # T078: Stream response_delta with deletion confirmation message (User Story 4)
-                    if tool_name == "delete_todo" and detected_intent == "DELETE":
-                        tool_result = event.result
-                        tool_args = getattr(event, 'arguments', {})
+                    # T057: Format list_todos results into natural language response
+                    formatted_response = format_todo_list(tool_result)
 
-                        # Build deletion confirmation message based on result
-                        deletion_message = None
-                        success = False
-                        deleted_ids = []
-                        deleted_count = 0
-                        was_mass_deletion = context_state.get("potential_mass_deletion", False)
+                    # T058: Stream response_delta events with formatted todo list
+                    # Stream the formatted response incrementally for better UX
+                    if formatted_response:
+                        yield stream_builder.add_response_delta(formatted_response)
 
-                        confirmation_required = (
-                            isinstance(tool_result, dict)
-                            and tool_result.get("confirmation_required")
-                        )
-                        if confirmation_required:
-                            deletion_message = tool_result.get(
-                                "message",
-                                "Please confirm the deletion to proceed.",
-                            )
-                            yield stream_builder.add_response_delta(deletion_message)
+                    logger.info(
+                        "LIST results formatted and streamed",
+                        extra={
+                            "request_id": request_id,
+                            "todo_count": result_count,
+                            "response_length": len(formatted_response) if formatted_response else 0
+                        }
+                    )
 
-                            logger.info(
-                                "DELETE confirmation requested",
-                                extra={
-                                    "request_id": request_id,
-                                    "success": False,
-                                    "confirmation_required": True,
-                                    "message_length": len(deletion_message)
-                                }
-                            )
-                        else:
-                            # Check if this was part of a mass deletion flow
-                            was_mass_deletion = context_state.get("potential_mass_deletion", False)
-                            deletion_count = context_state.get("deletion_candidate_count", 0)
-                            was_confirmed = (
-                                context_state.get("is_confirmation_response", False)
-                                or context_state.get("explicit_mass_delete", False)
-                                or tool_args.get("confirm") is True
-                            )
+                # T072: Detect potential mass deletion scenarios for logging/tracking only
+                # NOTE: The delete_todo function handles confirmation internally.
+                # We do NOT stream confirmation messages here to avoid duplicate output.
+                if tool_name == "list_todos":
+                    # tool_result and tool_args already set from ToolCallOutputItem
 
-                            deleted_ids = []
-                            requested_count = None
+                    # Check if user message contains deletion keywords
+                    has_deletion_intent = context_state.get("delete_intent_in_message", False)
 
-                            if isinstance(tool_result, dict):
-                                success = tool_result.get('success', True)
-                                result_message = tool_result.get('message', '')
-                                requested_count = tool_result.get("requested_count")
-                                deleted_count = tool_result.get("deleted_count")
-                                deleted_ids = tool_result.get("deleted_ids") or []
-                                if not deleted_ids and tool_result.get('deleted_id'):
-                                    deleted_ids = [tool_result.get('deleted_id')]
-                            else:
-                                # Assume success if we got a result
-                                success = True
-                                result_message = ''
-                                deleted_count = None
-                                if 'todo_id' in tool_args:
-                                    deleted_ids = [tool_args.get('todo_id')]
-                                elif 'id' in tool_args:
-                                    deleted_ids = [tool_args.get('id')]
-                                elif 'todo_ids' in tool_args:
-                                    deleted_ids = tool_args.get('todo_ids') or []
+                    # Count the todos that would be affected
+                    todo_count = 0
+                    if isinstance(tool_result, list):
+                        todo_count = len(tool_result)
+                    elif isinstance(tool_result, dict):
+                        if 'todos' in tool_result:
+                            todos_list = tool_result['todos']
+                            todo_count = len(todos_list) if isinstance(todos_list, list) else 0
+                        elif 'total' in tool_result:
+                            todo_count = tool_result['total']
 
-                            if deleted_count is None:
-                                deleted_count = len(deleted_ids)
-                            if requested_count is None:
-                                requested_count = deletion_count or deleted_count
-
-                            if requested_count and requested_count >= 3:
-                                was_mass_deletion = True
-
-                            # Build appropriate confirmation message
-                            if success:
-                                if deleted_count > 1:
-                                    deletion_message = f"OK Deleted {deleted_count} todos."
-                                elif deleted_ids:
-                                    deletion_message = (
-                                        f"OK Todo (ID: {deleted_ids[0]}) has been successfully deleted."
-                                    )
-                                elif was_confirmed:
-                                    deletion_message = "OK Deletion confirmed."
-                                else:
-                                    deletion_message = "OK Deletion completed."
-                            else:
-                                if deleted_count and requested_count and deleted_count < requested_count:
-                                    deletion_message = (
-                                        f"FAILED Deleted {deleted_count} of {requested_count} todos. "
-                                        f"{result_message}"
-                                    ).strip()
-                                else:
-                                    deletion_message = f"FAILED {result_message}".strip()
-
-                            # Stream the deletion confirmation message
-                            if deletion_message:
-                                yield stream_builder.add_response_delta(deletion_message)
-
-                                logger.info(
-                                    "DELETE confirmation message streamed",
-                                    extra={
-                                        "request_id": request_id,
-                                        "deleted_id": deleted_ids[0] if deleted_ids else None,
-                                        "success": success,
-                                        "was_mass_deletion": was_mass_deletion,
-                                        "message_length": len(deletion_message)
-                                    }
-                                )
-
-                        # T080: Track deleted todo_id for logging and observability (User Story 4)
-                        # This provides detailed delete operation tracking similar to create/update operations
-                        if success and deleted_ids:
-                            logger.debug(
-                                "Tracked deleted todo_id for observability",
-                                extra={
-                                    "request_id": request_id,
-                                    "deleted_todo_id": deleted_ids[0] if deleted_ids else None,
-                                    "deleted_todo_ids": deleted_ids if len(deleted_ids) > 1 else None,
-                                    "was_mass_deletion": was_mass_deletion,
-                                    "deletion_count": deleted_count,
-                                    "operation": "delete_todo_completed"
-                                }
-                            )
-
-                    # T057 & T058: Format list_todos results and stream as response_delta events
-                    if tool_name == "list_todos" and detected_intent == "LIST":
-                        tool_result = event.result
-
-                        # T063: Store list results in context for potential todo_id inference
-                        # This allows subsequent update/delete operations in the same request
-                        # to reference "the first todo", "that task", etc.
-                        context_state["recent_list_results"] = tool_result
-                        result_count = 0
-                        if isinstance(tool_result, list):
-                            result_count = len(tool_result)
-                        elif isinstance(tool_result, dict) and isinstance(
-                            tool_result.get("todos"), list
-                        ):
-                            result_count = len(tool_result.get("todos"))
-                        logger.debug(
-                            "Stored list results in context for todo_id inference",
-                            extra={
-                                "request_id": request_id,
-                                "result_count": result_count
-                            }
-                        )
-
-                        # T057: Format list_todos results into natural language response
-                        formatted_response = format_todo_list(tool_result)
-
-                        # T058: Stream response_delta events with formatted todo list
-                        # Stream the formatted response incrementally for better UX
-                        if formatted_response:
-                            yield stream_builder.add_response_delta(formatted_response)
+                    # T072: Track mass deletion context for logging
+                    if has_deletion_intent and todo_count >= 3:
+                        context_state["potential_mass_deletion"] = True
+                        context_state["deletion_candidate_count"] = todo_count
+                        context_state["deletion_filters"] = tool_args
 
                         logger.info(
-                            "LIST results formatted and streamed",
+                            f"Mass deletion context - {todo_count} todos may be affected",
                             extra={
                                 "request_id": request_id,
-                                "todo_count": result_count,
-                                "response_length": len(formatted_response) if formatted_response else 0
+                                "deletion_candidate_count": todo_count,
+                                "deletion_filters": tool_args,
                             }
                         )
-
-                    # T072: Detect potential mass deletion scenarios
-                    # When list_todos is called in a deletion context, check if it's a mass operation
-                    if tool_name == "list_todos":
-                        tool_result = event.result
-                        tool_args = getattr(event, 'arguments', {})
-
-                        # Check if user message contains deletion keywords
-                        has_deletion_intent = context_state.get("delete_intent_in_message", False)
-                        explicit_mass_delete = context_state.get("explicit_mass_delete", False)
-
-                        # Count the todos that would be affected
-                        todo_count = 0
-                        if isinstance(tool_result, list):
-                            todo_count = len(tool_result)
-                        elif isinstance(tool_result, dict):
-                            if 'todos' in tool_result:
-                                todos_list = tool_result['todos']
-                                todo_count = len(todos_list) if isinstance(todos_list, list) else 0
-                            elif 'total' in tool_result:
-                                todo_count = tool_result['total']
-
-                        # T072: Mass deletion detection - 3+ todos with deletion intent
-                        if has_deletion_intent and todo_count >= 3:
-                            context_state["potential_mass_deletion"] = True
-                            context_state["deletion_candidate_count"] = todo_count
-                            context_state["deletion_filters"] = tool_args
-
-                            logger.warning(
-                                f"Mass deletion detected - {todo_count} todos match deletion criteria",
-                                extra={
-                                    "request_id": request_id,
-                                    "deletion_candidate_count": todo_count,
-                                    "deletion_filters": tool_args,
-                                    "user_message": message[:100]  # Log first 100 chars for context
-                                }
-                            )
-
-                            if explicit_mass_delete:
-                                logger.info(
-                                    "Explicit mass deletion requested; skipping confirmation prompt",
-                                    extra={
-                                        "request_id": request_id,
-                                        "deletion_candidate_count": todo_count,
-                                        "deletion_filters": tool_args
-                                    }
-                                )
-                            else:
-                                # T073: Stream confirmation request for mass deletion
-                                # Build a clear, explicit confirmation message
-                                filter_description = []
-                                if 'status' in tool_args:
-                                    filter_description.append(f"{tool_args['status']}")
-                                if 'priority' in tool_args:
-                                    filter_description.append(f"{tool_args['priority']} priority")
-                                if 'tags' in tool_args:
-                                    filter_description.append(f"tagged with {tool_args['tags']}")
-                                if 'due_date_filter' in tool_args:
-                                    filter_description.append(f"{tool_args['due_date_filter']}")
-
-                                if filter_description:
-                                    criteria_text = " ".join(filter_description)
-                                    confirmation_message = (
-                                        f"WARNING: You're about to delete {todo_count} {criteria_text} todos. "
-                                        "This action cannot be undone.\n\n"
-                                        "Please confirm by responding with 'yes, delete all' "
-                                        "or cancel by saying 'no'."
-                                    )
-                                else:
-                                    confirmation_message = (
-                                        f"WARNING: You're about to delete all {todo_count} todos. "
-                                        "This action cannot be undone.\n\n"
-                                        "Please confirm by responding with 'yes, delete all' "
-                                        "or cancel by saying 'no'."
-                                    )
-
-                                # Stream the confirmation request as a thinking event (agent's reasoning)
-                                yield stream_builder.add_thinking(
-                                    f"Mass deletion detected: {todo_count} todos will be affected. Requesting user confirmation..."
-                                )
-
-                                # Stream the confirmation message as response delta
-                                yield stream_builder.add_response_delta(confirmation_message)
-
-                                logger.info(
-                                    "Mass deletion confirmation request streamed",
-                                    extra={
-                                        "request_id": request_id,
-                                        "deletion_candidate_count": todo_count,
-                                        "confirmation_message_length": len(confirmation_message)
-                                    }
-                                )
 
             # Use comprehensive event mapper to convert SDK events to ChatKit SSE
             sse_event = map_agent_event_to_chatkit(event, stream_builder)
@@ -1118,7 +1032,7 @@ async def chat_stream_generator(
         # Determine which circuit breaker is open based on error message
         error_str = str(e).lower()
         is_mcp_breaker = "mcp" in error_str or "todo" in error_str
-        is_groq_breaker = "groq" in error_str or "api" in error_str
+        is_openai_breaker = "openai" in error_str or "api" in error_str
 
         # T085: Provide graceful degradation messages based on which service is unavailable
         if is_mcp_breaker:
@@ -1131,9 +1045,9 @@ async def chat_stream_generator(
             )
             recoverable = True  # Will auto-recover when circuit breaker closes
 
-        elif is_groq_breaker:
-            # Groq API circuit breaker open - cannot process natural language
-            error_type = ErrorType.GROQ_API_ERROR
+        elif is_openai_breaker:
+            # OpenAI API circuit breaker open - cannot process natural language
+            error_type = ErrorType.OPENAI_API_ERROR
             error_message = (
                 "The AI language service is temporarily unavailable due to repeated failures. "
                 "Our system is automatically monitoring the service and will restore access once it's healthy. "
@@ -1143,7 +1057,7 @@ async def chat_stream_generator(
 
         else:
             # Generic circuit breaker error
-            error_type = ErrorType.GROQ_API_ERROR
+            error_type = ErrorType.OPENAI_API_ERROR
             error_message = (
                 "A critical service is temporarily unavailable. "
                 "Our system is working to restore access. Please try again shortly."
@@ -1186,7 +1100,7 @@ async def chat_stream_generator(
         )
 
         # Send error event to client
-        error_type = ErrorType.GROQ_API_ERROR
+        error_type = ErrorType.OPENAI_API_ERROR
         error_message = "An unexpected error occurred. Please try again."
         recoverable = True
 
@@ -1245,7 +1159,7 @@ async def chat_stream_generator(
 
         # Rate limit errors
         elif "rate limit" in error_str or "rate_limit_exceeded" in error_str or "tokens per day" in error_str:
-            error_type = ErrorType.GROQ_API_ERROR
+            error_type = ErrorType.OPENAI_API_ERROR
             recoverable = True
 
             # Best-effort parse of "Please try again in 3m33.408s"
@@ -1263,8 +1177,8 @@ async def chat_stream_generator(
                 wait_hint = "a moment"
 
             error_message = (
-                "The AI service hit a temporary token rate limit. "
-                f"Please try again in {wait_hint}, or switch to a smaller Groq model / upgrade your Groq tier."
+                "The AI service hit a temporary limit. "
+                f"Please try again in {wait_hint}."
             )
 
         # Tool execution errors (MCP tool failed)

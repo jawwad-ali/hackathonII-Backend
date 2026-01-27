@@ -12,6 +12,7 @@ SQL Injection Prevention:
 - Wildcard character escaping for ILIKE pattern matching
 """
 
+import json
 import re
 from typing import Any, Dict, List, Optional
 
@@ -118,7 +119,7 @@ def _serialize_todo(todo: Todo) -> Dict[str, Any]:
     }
 
 
-def _search_todos_impl(keyword: str, _test_session: Optional[Session] = None) -> dict:
+def _search_todos_impl(keyword: str, _test_session: Optional[Session] = None) -> str:
     """Internal implementation of search_todos with test session support.
 
     This tool performs case-insensitive keyword matching across both title and
@@ -170,13 +171,14 @@ def _search_todos_impl(keyword: str, _test_session: Optional[Session] = None) ->
 
             serialized = [_serialize_todo(todo) for todo in todos]
             total = len(serialized)
-            return {
+            # Return JSON string (MCP tools should return strings for compatibility)
+            return json.dumps({
                 "todos": serialized,
                 "total": total,
                 "limit": total,
                 "offset": 0,
                 "query": sanitized_keyword,
-            }
+            }, default=str)
 
         except Exception as e:
             raise Exception(f"Database error while searching todos: {str(e)}")
@@ -202,13 +204,14 @@ def _search_todos_impl(keyword: str, _test_session: Optional[Session] = None) ->
 
                 serialized = [_serialize_todo(todo) for todo in todos]
                 total = len(serialized)
-                return {
+                # Return JSON string (MCP tools should return strings for compatibility)
+                return json.dumps({
                     "todos": serialized,
                     "total": total,
                     "limit": total,
                     "offset": 0,
                     "query": sanitized_keyword,
-                }
+                }, default=str)
 
             except Exception as e:
                 raise Exception(f"Database error while searching todos: {str(e)}")
@@ -216,7 +219,7 @@ def _search_todos_impl(keyword: str, _test_session: Optional[Session] = None) ->
 
 # Create MCP tool wrapper that excludes test parameter
 @mcp.tool
-def search_todos(keyword: str) -> dict:
+def search_todos(keyword: str) -> str:
     """Searches active todos by keyword in title or description.
 
     Performs case-insensitive search across title and description fields.

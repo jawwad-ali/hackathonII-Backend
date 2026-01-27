@@ -7,6 +7,7 @@ The tool validates that the todo exists before deletion and provides clear error
 messages for non-existent IDs. Returns MCP-compliant responses to the AI agent.
 """
 
+import json
 from typing import Any, Dict, Optional
 
 from sqlmodel import Session, select
@@ -16,7 +17,7 @@ from src.mcp_server.models import Todo
 from src.mcp_server.server import mcp
 
 
-def _delete_todo_impl(id: int, _test_session: Optional[Session] = None) -> Dict[str, Any]:
+def _delete_todo_impl(id: int, _test_session: Optional[Session] = None) -> str:
     """Internal implementation of delete_todo with test session support.
 
     This tool performs a hard delete, completely removing the todo from the database.
@@ -62,11 +63,12 @@ def _delete_todo_impl(id: int, _test_session: Optional[Session] = None) -> Dict[
             session.delete(todo)
             session.commit()
 
-            return {
+            # Return JSON string (MCP tools should return strings for compatibility)
+            return json.dumps({
                 "success": True,
                 "deleted_id": todo_id,
                 "message": f"Todo deleted successfully! ID: {todo_id} has been permanently removed.",
-            }
+            })
 
         except ValueError:
             # Re-raise ValueError (not found errors)
@@ -96,11 +98,12 @@ def _delete_todo_impl(id: int, _test_session: Optional[Session] = None) -> Dict[
                 session.delete(todo)
                 session.commit()
 
-                return {
+                # Return JSON string (MCP tools should return strings for compatibility)
+                return json.dumps({
                     "success": True,
                     "deleted_id": todo_id,
                     "message": f"Todo deleted successfully! ID: {todo_id} has been permanently removed.",
-                }
+                })
 
             except ValueError:
                 # Re-raise ValueError (not found errors)
@@ -113,7 +116,7 @@ def _delete_todo_impl(id: int, _test_session: Optional[Session] = None) -> Dict[
 
 # Create MCP tool wrapper that excludes test parameter
 @mcp.tool
-def delete_todo(id: int) -> Dict[str, Any]:
+def delete_todo(id: int) -> str:
     """Permanently deletes a todo by ID (hard delete).
 
     Removes the todo completely from the database. Cannot be recovered after deletion.

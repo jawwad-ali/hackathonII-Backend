@@ -37,7 +37,7 @@ class ErrorType(str, Enum):
     """Error types for error events."""
     TOOL_EXECUTION_FAILED = "tool_execution_failed"
     MCP_CONNECTION_ERROR = "mcp_connection_error"
-    GROQ_API_ERROR = "groq_api_error"
+    OPENAI_API_ERROR = "openai_api_error"
     TIMEOUT = "timeout"
     INVALID_TOOL_ARGUMENTS = "invalid_tool_arguments"
 
@@ -252,7 +252,7 @@ def map_agent_event_to_chatkit(
                 or str(raw)
             )
             return stream_builder.add_error(
-                error_type=ErrorType.GROQ_API_ERROR,
+                error_type=ErrorType.OPENAI_API_ERROR,
                 message=str(message),
                 recoverable=True,
             )
@@ -382,7 +382,7 @@ def map_agent_event_to_chatkit(
 
     if hasattr(event, "error"):
         return stream_builder.add_error(
-            error_type=ErrorType.GROQ_API_ERROR,
+            error_type=ErrorType.OPENAI_API_ERROR,
             message=str(getattr(event, "error")),
             recoverable=getattr(event, "recoverable", True),
         )

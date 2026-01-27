@@ -6,6 +6,7 @@ from the PostgreSQL database using SQLModel with optional filtering.
 The tool supports filtering by status, priority, and pagination.
 """
 
+import json
 import re
 from typing import Any, Dict, List, Optional, Union
 
@@ -192,12 +193,13 @@ def _list_todos_impl(
 
             serialized = [_serialize_todo(todo) for todo in todos]
             total = len(serialized)
-            return {
+            # Return JSON string (MCP tools should return strings for compatibility)
+            return json.dumps({
                 "todos": serialized,
                 "total": total,
                 "limit": limit if limit is not None else total,
                 "offset": offset or 0,
-            }
+            }, default=str)
 
         except Exception as e:
             raise Exception(f"Database error while listing todos: {str(e)}")
@@ -217,12 +219,13 @@ def _list_todos_impl(
 
                 serialized = [_serialize_todo(todo) for todo in todos]
                 total = len(serialized)
-                return {
+                # Return JSON string (MCP tools should return strings for compatibility)
+                return json.dumps({
                     "todos": serialized,
                     "total": total,
                     "limit": limit if limit is not None else total,
                     "offset": offset or 0,
-                }
+                }, default=str)
 
             except Exception as e:
                 raise Exception(f"Database error while listing todos: {str(e)}")
