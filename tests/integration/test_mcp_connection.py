@@ -15,7 +15,7 @@ import time
 
 from src.main import app
 from src.mcp.client import get_mcp_circuit_breaker
-from src.config import get_gemini_circuit_breaker
+from src.config import get_llm_circuit_breaker
 
 
 class TestMCPConnectionStartup:
@@ -248,7 +248,7 @@ class TestHealthCheckEndpoint:
         """
         # Mock both circuit breakers as closed (healthy)
         with patch('src.main.get_mcp_circuit_breaker') as mock_mcp_breaker, \
-             patch('src.main.get_gemini_circuit_breaker') as mock_gemini_breaker:
+             patch('src.main.get_llm_circuit_breaker') as mock_llm_breaker:
 
             # Create mock circuit breaker states (both closed)
             mock_mcp_state = MagicMock()
@@ -256,13 +256,13 @@ class TestHealthCheckEndpoint:
             mock_mcp_state.failure_count = 0
             mock_mcp_state.last_failure_time = None
 
-            mock_gemini_state = MagicMock()
-            mock_gemini_state.state.value = "closed"
-            mock_gemini_state.failure_count = 0
-            mock_gemini_state.last_failure_time = None
+            mock_llm_state = MagicMock()
+            mock_llm_state.state.value = "closed"
+            mock_llm_state.failure_count = 0
+            mock_llm_state.last_failure_time = None
 
             mock_mcp_breaker.return_value.get_state.return_value = mock_mcp_state
-            mock_gemini_breaker.return_value.get_state.return_value = mock_gemini_state
+            mock_llm_breaker.return_value.get_state.return_value = mock_llm_state
 
             client = TestClient(app)
             response = client.get("/health")
@@ -275,7 +275,7 @@ class TestHealthCheckEndpoint:
             assert data["status"] == "healthy", "Status should be 'healthy' when all services are up"
             assert "circuit_breakers" in data, "Response should include circuit_breakers"
             assert data["circuit_breakers"]["mcp_server"]["state"] == "closed"
-            assert data["circuit_breakers"]["gemini_api"]["state"] == "closed"
+            assert data["circuit_breakers"]["llm_api"]["state"] == "closed"
 
     def test_health_check_returns_degraded_when_mcp_down(self):
         """
@@ -288,7 +288,7 @@ class TestHealthCheckEndpoint:
         - Gemini circuit breaker in "closed" state
         """
         with patch('src.main.get_mcp_circuit_breaker') as mock_mcp_breaker, \
-             patch('src.main.get_gemini_circuit_breaker') as mock_gemini_breaker:
+             patch('src.main.get_llm_circuit_breaker') as mock_llm_breaker:
 
             # Mock MCP circuit breaker as open (unhealthy)
             mock_mcp_state = MagicMock()
@@ -297,13 +297,13 @@ class TestHealthCheckEndpoint:
             mock_mcp_state.last_failure_time = None
 
             # Mock Gemini circuit breaker as closed (healthy)
-            mock_gemini_state = MagicMock()
-            mock_gemini_state.state.value = "closed"
-            mock_gemini_state.failure_count = 0
-            mock_gemini_state.last_failure_time = None
+            mock_llm_state = MagicMock()
+            mock_llm_state.state.value = "closed"
+            mock_llm_state.failure_count = 0
+            mock_llm_state.last_failure_time = None
 
             mock_mcp_breaker.return_value.get_state.return_value = mock_mcp_state
-            mock_gemini_breaker.return_value.get_state.return_value = mock_gemini_state
+            mock_llm_breaker.return_value.get_state.return_value = mock_llm_state
 
             client = TestClient(app)
             response = client.get("/health")
@@ -317,7 +317,7 @@ class TestHealthCheckEndpoint:
             assert data["status"] == "degraded", \
                 "Status should be 'degraded' when MCP is down but Gemini is up"
             assert data["circuit_breakers"]["mcp_server"]["state"] == "open"
-            assert data["circuit_breakers"]["gemini_api"]["state"] == "closed"
+            assert data["circuit_breakers"]["llm_api"]["state"] == "closed"
 
     def test_health_check_returns_unhealthy_when_both_down(self):
         """
@@ -329,7 +329,7 @@ class TestHealthCheckEndpoint:
         - Both circuit breakers in "open" state
         """
         with patch('src.main.get_mcp_circuit_breaker') as mock_mcp_breaker, \
-             patch('src.main.get_gemini_circuit_breaker') as mock_gemini_breaker:
+             patch('src.main.get_llm_circuit_breaker') as mock_llm_breaker:
 
             # Mock both circuit breakers as open
             mock_mcp_state = MagicMock()
@@ -337,13 +337,13 @@ class TestHealthCheckEndpoint:
             mock_mcp_state.failure_count = 5
             mock_mcp_state.last_failure_time = None
 
-            mock_gemini_state = MagicMock()
-            mock_gemini_state.state.value = "open"
-            mock_gemini_state.failure_count = 3
-            mock_gemini_state.last_failure_time = None
+            mock_llm_state = MagicMock()
+            mock_llm_state.state.value = "open"
+            mock_llm_state.failure_count = 3
+            mock_llm_state.last_failure_time = None
 
             mock_mcp_breaker.return_value.get_state.return_value = mock_mcp_state
-            mock_gemini_breaker.return_value.get_state.return_value = mock_gemini_state
+            mock_llm_breaker.return_value.get_state.return_value = mock_llm_state
 
             client = TestClient(app)
             response = client.get("/health")
@@ -357,7 +357,7 @@ class TestHealthCheckEndpoint:
             assert data["status"] == "unhealthy", \
                 "Status should be 'unhealthy' when both services are down"
             assert data["circuit_breakers"]["mcp_server"]["state"] == "open"
-            assert data["circuit_breakers"]["gemini_api"]["state"] == "open"
+            assert data["circuit_breakers"]["llm_api"]["state"] == "open"
 
     def test_health_check_includes_metrics(self):
         """

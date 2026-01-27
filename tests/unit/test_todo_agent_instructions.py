@@ -22,7 +22,7 @@ def _get_module_constant_string(module_path: str, constant_name: str) -> str:
 
 def test_create_instructions_include_description_argument() -> None:
     instructions = _get_module_constant_string(
-        "src/agents/todo_agent.py", "TODO_AGENT_INSTRUCTIONS"
+        "src/orchestrators/todo_agent.py", "TODO_AGENT_INSTRUCTIONS"
     )
 
     assert "Description Extraction" in instructions

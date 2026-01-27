@@ -29,12 +29,12 @@ class TestCreateTodoTool:
     def test_create_todo_with_title_only(self, session):
         """Test creating a todo with only title (minimal valid input)."""
         # Arrange
-        from src.mcp_server.tools.create_todo import create_todo
+        from src.mcp_server.tools.create_todo import _create_todo_impl
 
         title = "Call dentist"
 
         # Act
-        result = create_todo(title=title, _test_session=session)
+        result = _create_todo_impl(title=title, _test_session=session)
 
         # Assert - Verify todo was created in database
         statement = select(Todo).where(Todo.title == title)
@@ -55,13 +55,13 @@ class TestCreateTodoTool:
     def test_create_todo_with_title_and_description(self, session):
         """Test creating a todo with both title and description."""
         # Arrange
-        from src.mcp_server.tools.create_todo import create_todo
+        from src.mcp_server.tools.create_todo import _create_todo_impl
 
         title = "Buy groceries"
         description = "Milk, eggs, bread, and coffee beans"
 
         # Act
-        result = create_todo(title=title, description=description, _test_session=session)
+        result = _create_todo_impl(title=title, description=description, _test_session=session)
 
         # Assert - Verify todo was created in database
         statement = select(Todo).where(Todo.title == title)
@@ -80,12 +80,12 @@ class TestCreateTodoTool:
     def test_create_todo_with_long_title(self, session):
         """Test creating a todo with maximum valid title length (200 chars)."""
         # Arrange
-        from src.mcp_server.tools.create_todo import create_todo
+        from src.mcp_server.tools.create_todo import _create_todo_impl
 
         title = "A" * 200  # Maximum allowed length
 
         # Act
-        result = create_todo(title=title, _test_session=session)
+        result = _create_todo_impl(title=title, _test_session=session)
 
         # Assert - Verify todo was created
         statement = select(Todo).where(Todo.title == title)
@@ -98,13 +98,13 @@ class TestCreateTodoTool:
     def test_create_todo_with_long_description(self, session):
         """Test creating a todo with maximum valid description length (2000 chars)."""
         # Arrange
-        from src.mcp_server.tools.create_todo import create_todo
+        from src.mcp_server.tools.create_todo import _create_todo_impl
 
         title = "Test todo"
         description = "A" * 2000  # Maximum allowed length
 
         # Act
-        result = create_todo(title=title, description=description, _test_session=session)
+        result = _create_todo_impl(title=title, description=description, _test_session=session)
 
         # Assert - Verify todo was created
         statement = select(Todo).where(Todo.title == title)
@@ -117,13 +117,13 @@ class TestCreateTodoTool:
     def test_create_todo_title_exceeds_max_length(self):
         """Test that title exceeding 200 chars raises validation error."""
         # Arrange
-        from src.mcp_server.tools.create_todo import create_todo
+        from src.mcp_server.tools.create_todo import _create_todo_impl
 
         title = "A" * 201  # Exceeds maximum length
 
         # Act & Assert - Should raise validation error
         with pytest.raises(Exception) as exc_info:
-            create_todo(title=title, _test_session=None)
+            _create_todo_impl(title=title, _test_session=None)
 
         # Verify error mentions validation or length
         error_message = str(exc_info.value).lower()
@@ -132,14 +132,14 @@ class TestCreateTodoTool:
     def test_create_todo_description_exceeds_max_length(self):
         """Test that description exceeding 2000 chars raises validation error."""
         # Arrange
-        from src.mcp_server.tools.create_todo import create_todo
+        from src.mcp_server.tools.create_todo import _create_todo_impl
 
         title = "Test"
         description = "A" * 2001  # Exceeds maximum length
 
         # Act & Assert - Should raise validation error
         with pytest.raises(Exception) as exc_info:
-            create_todo(title=title, description=description, _test_session=None)
+            _create_todo_impl(title=title, description=description, _test_session=None)
 
         # Verify error mentions validation or length
         error_message = str(exc_info.value).lower()
@@ -148,13 +148,13 @@ class TestCreateTodoTool:
     def test_create_todo_empty_title(self):
         """Test that empty title raises validation error."""
         # Arrange
-        from src.mcp_server.tools.create_todo import create_todo
+        from src.mcp_server.tools.create_todo import _create_todo_impl
 
         title = ""  # Empty string
 
         # Act & Assert - Should raise validation error
         with pytest.raises(Exception) as exc_info:
-            create_todo(title=title, _test_session=None)
+            _create_todo_impl(title=title, _test_session=None)
 
         # Verify error mentions validation or empty
         error_message = str(exc_info.value).lower()
@@ -163,13 +163,13 @@ class TestCreateTodoTool:
     def test_create_todo_whitespace_only_title(self):
         """Test that whitespace-only title raises validation error."""
         # Arrange
-        from src.mcp_server.tools.create_todo import create_todo
+        from src.mcp_server.tools.create_todo import _create_todo_impl
 
         title = "   \t\n   "  # Only whitespace
 
         # Act & Assert - Should raise validation error
         with pytest.raises(Exception) as exc_info:
-            create_todo(title=title, _test_session=None)
+            _create_todo_impl(title=title, _test_session=None)
 
         # Verify error mentions validation or whitespace/empty
         error_message = str(exc_info.value).lower()
@@ -178,13 +178,13 @@ class TestCreateTodoTool:
     def test_create_todo_strips_whitespace_from_title(self, session):
         """Test that leading/trailing whitespace is stripped from title."""
         # Arrange
-        from src.mcp_server.tools.create_todo import create_todo
+        from src.mcp_server.tools.create_todo import _create_todo_impl
 
         title_with_whitespace = "  Buy groceries  "
         expected_title = "Buy groceries"
 
         # Act
-        result = create_todo(title=title_with_whitespace, _test_session=session)
+        result = _create_todo_impl(title=title_with_whitespace, _test_session=session)
 
         # Assert - Verify title was stripped
         statement = select(Todo).where(Todo.title == expected_title)
@@ -198,13 +198,13 @@ class TestCreateTodoTool:
     def test_create_todo_timestamps_auto_generated(self, session):
         """Test that created_at and updated_at timestamps are auto-generated."""
         # Arrange
-        from src.mcp_server.tools.create_todo import create_todo
+        from src.mcp_server.tools.create_todo import _create_todo_impl
 
         title = "Test timestamps"
         before_creation = datetime.now(timezone.utc)
 
         # Act
-        result = create_todo(title=title, _test_session=session)
+        result = _create_todo_impl(title=title, _test_session=session)
 
         # Assert
         after_creation = datetime.now(timezone.utc)
@@ -222,12 +222,12 @@ class TestCreateTodoTool:
     def test_create_todo_returns_mcp_compliant_response(self, session):
         """Test that create_todo returns MCP-compliant Content object."""
         # Arrange
-        from src.mcp_server.tools.create_todo import create_todo
+        from src.mcp_server.tools.create_todo import _create_todo_impl
 
         title = "Test MCP response"
 
         # Act
-        result = create_todo(title=title, _test_session=session)
+        result = _create_todo_impl(title=title, _test_session=session)
 
         # Assert - FastMCP automatically converts to MCP Content format
         # Tool should return a string (FastMCP handles Content wrapping)
@@ -238,13 +238,13 @@ class TestCreateTodoTool:
     def test_create_todo_with_due_date(self, session):
         """Test creating a todo with a due_date specified."""
         # Arrange
-        from src.mcp_server.tools.create_todo import create_todo
+        from src.mcp_server.tools.create_todo import _create_todo_impl
 
         title = "Meeting with client"
         due_date = datetime.now(timezone.utc) + timedelta(days=2)
 
         # Act
-        result = create_todo(title=title, due_date=due_date, _test_session=session)
+        result = _create_todo_impl(title=title, due_date=due_date, _test_session=session)
 
         # Assert - Verify todo was created with due_date
         statement = select(Todo).where(Todo.title == title)
@@ -261,12 +261,12 @@ class TestCreateTodoTool:
     def test_create_todo_with_priority_high(self, session):
         """Test creating a high priority todo."""
         # Arrange
-        from src.mcp_server.tools.create_todo import create_todo
+        from src.mcp_server.tools.create_todo import _create_todo_impl
 
         title = "Urgent: Fix production bug"
 
         # Act
-        result = create_todo(title=title, priority="high", _test_session=session)
+        result = _create_todo_impl(title=title, priority="high", _test_session=session)
 
         # Assert - Verify todo was created with high priority
         statement = select(Todo).where(Todo.title == title)
@@ -282,12 +282,12 @@ class TestCreateTodoTool:
     def test_create_todo_with_priority_low(self, session):
         """Test creating a low priority todo."""
         # Arrange
-        from src.mcp_server.tools.create_todo import create_todo
+        from src.mcp_server.tools.create_todo import _create_todo_impl
 
         title = "Read documentation"
 
         # Act
-        result = create_todo(title=title, priority="low", _test_session=session)
+        result = _create_todo_impl(title=title, priority="low", _test_session=session)
 
         # Assert - Verify todo was created with low priority
         statement = select(Todo).where(Todo.title == title)
@@ -303,12 +303,12 @@ class TestCreateTodoTool:
     def test_create_todo_default_priority_medium(self, session):
         """Test that priority defaults to MEDIUM when not specified."""
         # Arrange
-        from src.mcp_server.tools.create_todo import create_todo
+        from src.mcp_server.tools.create_todo import _create_todo_impl
 
         title = "Regular task"
 
         # Act
-        result = create_todo(title=title, _test_session=session)
+        result = _create_todo_impl(title=title, _test_session=session)
 
         # Assert - Verify default priority is MEDIUM
         statement = select(Todo).where(Todo.title == title)
@@ -320,13 +320,13 @@ class TestCreateTodoTool:
     def test_create_todo_with_tags(self, session):
         """Test creating a todo with tags."""
         # Arrange
-        from src.mcp_server.tools.create_todo import create_todo
+        from src.mcp_server.tools.create_todo import _create_todo_impl
 
         title = "Prepare presentation"
         tags = ["work", "urgent", "meeting"]
 
         # Act
-        result = create_todo(title=title, tags=tags, _test_session=session)
+        result = _create_todo_impl(title=title, tags=tags, _test_session=session)
 
         # Assert - Verify todo was created with tags
         statement = select(Todo).where(Todo.title == title)
@@ -346,13 +346,13 @@ class TestCreateTodoTool:
     def test_create_todo_tags_normalized_lowercase(self, session):
         """Test that tags are normalized to lowercase."""
         # Arrange
-        from src.mcp_server.tools.create_todo import create_todo
+        from src.mcp_server.tools.create_todo import _create_todo_impl
 
         title = "Task with mixed case tags"
         tags = ["Work", "URGENT", "Personal"]
 
         # Act
-        result = create_todo(title=title, tags=tags, _test_session=session)
+        result = _create_todo_impl(title=title, tags=tags, _test_session=session)
 
         # Assert - Verify tags are normalized to lowercase
         statement = select(Todo).where(Todo.title == title)
@@ -364,13 +364,13 @@ class TestCreateTodoTool:
     def test_create_todo_tags_remove_duplicates(self, session):
         """Test that duplicate tags are removed."""
         # Arrange
-        from src.mcp_server.tools.create_todo import create_todo
+        from src.mcp_server.tools.create_todo import _create_todo_impl
 
         title = "Task with duplicate tags"
         tags = ["work", "urgent", "work", "WORK", "urgent"]
 
         # Act
-        result = create_todo(title=title, tags=tags, _test_session=session)
+        result = _create_todo_impl(title=title, tags=tags, _test_session=session)
 
         # Assert - Verify duplicates are removed
         statement = select(Todo).where(Todo.title == title)
@@ -384,7 +384,7 @@ class TestCreateTodoTool:
     def test_create_todo_with_all_fields(self, session):
         """Test creating a todo with all fields specified."""
         # Arrange
-        from src.mcp_server.tools.create_todo import create_todo
+        from src.mcp_server.tools.create_todo import _create_todo_impl
 
         title = "Complete project proposal"
         description = "Write and submit the Q1 project proposal"
@@ -393,7 +393,7 @@ class TestCreateTodoTool:
         tags = ["work", "deadline", "important"]
 
         # Act
-        result = create_todo(
+        result = _create_todo_impl(
             title=title,
             description=description,
             due_date=due_date,
@@ -422,14 +422,14 @@ class TestCreateTodoTool:
     def test_create_todo_invalid_priority(self):
         """Test that invalid priority value raises validation error."""
         # Arrange
-        from src.mcp_server.tools.create_todo import create_todo
+        from src.mcp_server.tools.create_todo import _create_todo_impl
 
         title = "Test invalid priority"
         invalid_priority = "super_urgent"  # Not a valid priority
 
         # Act & Assert - Should raise validation error
         with pytest.raises(Exception) as exc_info:
-            create_todo(title=title, priority=invalid_priority, _test_session=None)
+            _create_todo_impl(title=title, priority=invalid_priority, _test_session=None)
 
         # Verify error mentions validation or priority
         error_message = str(exc_info.value).lower()
@@ -438,14 +438,14 @@ class TestCreateTodoTool:
     def test_create_todo_tags_empty_string_rejected(self):
         """Test that tags containing empty strings are rejected."""
         # Arrange
-        from src.mcp_server.tools.create_todo import create_todo
+        from src.mcp_server.tools.create_todo import _create_todo_impl
 
         title = "Test empty tag"
         tags = ["work", "", "urgent"]  # Contains empty string
 
         # Act & Assert - Should raise validation error
         with pytest.raises(Exception) as exc_info:
-            create_todo(title=title, tags=tags, _test_session=None)
+            _create_todo_impl(title=title, tags=tags, _test_session=None)
 
         # Verify error mentions tags or empty
         error_message = str(exc_info.value).lower()
@@ -454,12 +454,12 @@ class TestCreateTodoTool:
     def test_create_multiple_todos_sequentially(self, session):
         """Test creating multiple todos in sequence generates unique IDs."""
         # Arrange
-        from src.mcp_server.tools.create_todo import create_todo
+        from src.mcp_server.tools.create_todo import _create_todo_impl
 
         # Act
-        result1 = create_todo(title="First todo")
-        result2 = create_todo(title="Second todo")
-        result3 = create_todo(title="Third todo")
+        result1 = _create_todo_impl(title="First todo")
+        result2 = _create_todo_impl(title="Second todo")
+        result3 = _create_todo_impl(title="Third todo")
 
         # Assert - Verify all todos created with unique IDs
         statement = select(Todo)
@@ -639,7 +639,7 @@ class TestListTodosTool:
         session.refresh(todo)
 
         # Verify it appears in list
-        result_before = list_todos(_test_session=session)
+        result_before = _list_todos_impl(_test_session=session)
         assert "Task to complete" in result_before
 
         # Act - Change status to completed
@@ -648,7 +648,7 @@ class TestListTodosTool:
         session.commit()
 
         # Assert - Should no longer appear in list
-        result_after = list_todos(_test_session=session)
+        result_after = _list_todos_impl(_test_session=session)
         assert "Task to complete" not in result_after
 
     def test_list_todos_after_status_change_to_archived(self, session):
@@ -663,7 +663,7 @@ class TestListTodosTool:
         session.refresh(todo)
 
         # Verify it appears in list
-        result_before = list_todos(_test_session=session)
+        result_before = _list_todos_impl(_test_session=session)
         assert "Task to archive" in result_before
 
         # Act - Change status to archived
@@ -672,7 +672,7 @@ class TestListTodosTool:
         session.commit()
 
         # Assert - Should no longer appear in list
-        result_after = list_todos(_test_session=session)
+        result_after = _list_todos_impl(_test_session=session)
         assert "Task to archive" not in result_after
 
     def test_list_todos_count_accuracy(self, session):
@@ -925,7 +925,7 @@ class TestUpdateTodoTool:
     def test_update_todo_title_only(self, session, sample_todo):
         """Test updating only the title of an existing todo."""
         # Arrange
-        from src.mcp_server.tools.update_todo import update_todo
+        from src.mcp_server.tools.update_todo import _update_todo_impl
 
         original_title = sample_todo.title
         original_description = sample_todo.description
@@ -934,7 +934,7 @@ class TestUpdateTodoTool:
         new_title = "Updated title for testing"
 
         # Act
-        result = update_todo(id=sample_todo.id, title=new_title, _test_session=session)
+        result = _update_todo_impl(id=sample_todo.id, title=new_title, _test_session=session)
 
         # Assert - Verify database changes
         session.refresh(sample_todo)
@@ -952,14 +952,14 @@ class TestUpdateTodoTool:
     def test_update_todo_description_only(self, session, sample_todo):
         """Test updating only the description of an existing todo."""
         # Arrange
-        from src.mcp_server.tools.update_todo import update_todo
+        from src.mcp_server.tools.update_todo import _update_todo_impl
 
         original_title = sample_todo.title
         original_description = sample_todo.description
         new_description = "This is the updated description for testing purposes"
 
         # Act
-        result = update_todo(id=sample_todo.id, description=new_description, _test_session=session)
+        result = _update_todo_impl(id=sample_todo.id, description=new_description, _test_session=session)
 
         # Assert - Verify database changes
         session.refresh(sample_todo)
@@ -974,7 +974,7 @@ class TestUpdateTodoTool:
     def test_update_todo_status_only(self, session, sample_todo):
         """Test updating only the status of an existing todo."""
         # Arrange
-        from src.mcp_server.tools.update_todo import update_todo
+        from src.mcp_server.tools.update_todo import _update_todo_impl
 
         original_title = sample_todo.title
         original_description = sample_todo.description
@@ -982,7 +982,7 @@ class TestUpdateTodoTool:
         new_status = "completed"
 
         # Act
-        result = update_todo(id=sample_todo.id, status=new_status, _test_session=session)
+        result = _update_todo_impl(id=sample_todo.id, status=new_status, _test_session=session)
 
         # Assert - Verify database changes
         session.refresh(sample_todo)
@@ -997,14 +997,14 @@ class TestUpdateTodoTool:
     def test_update_todo_multiple_fields(self, session, sample_todo):
         """Test updating multiple fields simultaneously."""
         # Arrange
-        from src.mcp_server.tools.update_todo import update_todo
+        from src.mcp_server.tools.update_todo import _update_todo_impl
 
         new_title = "Completely new title"
         new_description = "Completely new description"
         new_status = "completed"
 
         # Act
-        result = update_todo(
+        result = _update_todo_impl(
             id=sample_todo.id,
             title=new_title,
             description=new_description,
@@ -1025,7 +1025,7 @@ class TestUpdateTodoTool:
     def test_update_todo_status_active_to_completed(self, session):
         """Test status transition from active to completed."""
         # Arrange
-        from src.mcp_server.tools.update_todo import update_todo
+        from src.mcp_server.tools.update_todo import _update_todo_impl
 
         todo = Todo(title="Task to complete", status=TodoStatus.ACTIVE)
         session.add(todo)
@@ -1034,7 +1034,7 @@ class TestUpdateTodoTool:
         assert todo.status == TodoStatus.ACTIVE
 
         # Act
-        result = update_todo(id=todo.id, status="completed", _test_session=session)
+        result = _update_todo_impl(id=todo.id, status="completed", _test_session=session)
 
         # Assert
         session.refresh(todo)
@@ -1043,7 +1043,7 @@ class TestUpdateTodoTool:
     def test_update_todo_status_completed_to_active(self, session):
         """Test reactivating a completed todo (status transition from completed to active)."""
         # Arrange
-        from src.mcp_server.tools.update_todo import update_todo
+        from src.mcp_server.tools.update_todo import _update_todo_impl
 
         todo = Todo(title="Completed task", status=TodoStatus.COMPLETED)
         session.add(todo)
@@ -1052,7 +1052,7 @@ class TestUpdateTodoTool:
         assert todo.status == TodoStatus.COMPLETED
 
         # Act - Reactivate
-        result = update_todo(id=todo.id, status="active", _test_session=session)
+        result = _update_todo_impl(id=todo.id, status="active", _test_session=session)
 
         # Assert
         session.refresh(todo)
@@ -1061,7 +1061,7 @@ class TestUpdateTodoTool:
     def test_update_todo_status_active_to_archived(self, session):
         """Test status transition from active to archived."""
         # Arrange
-        from src.mcp_server.tools.update_todo import update_todo
+        from src.mcp_server.tools.update_todo import _update_todo_impl
 
         todo = Todo(title="Task to archive", status=TodoStatus.ACTIVE)
         session.add(todo)
@@ -1069,7 +1069,7 @@ class TestUpdateTodoTool:
         session.refresh(todo)
 
         # Act
-        result = update_todo(id=todo.id, status="archived", _test_session=session)
+        result = _update_todo_impl(id=todo.id, status="archived", _test_session=session)
 
         # Assert
         session.refresh(todo)
@@ -1078,13 +1078,13 @@ class TestUpdateTodoTool:
     def test_update_todo_not_found_error(self, session):
         """Test that updating non-existent todo ID raises appropriate error."""
         # Arrange
-        from src.mcp_server.tools.update_todo import update_todo
+        from src.mcp_server.tools.update_todo import _update_todo_impl
 
         non_existent_id = 99999
 
         # Act & Assert - Should raise ValueError or similar
         with pytest.raises(Exception) as exc_info:
-            update_todo(id=non_existent_id, title="New title", _test_session=session)
+            _update_todo_impl(id=non_existent_id, title="New title", _test_session=session)
 
         # Verify error message mentions "not found" or similar
         error_message = str(exc_info.value).lower()
@@ -1093,7 +1093,7 @@ class TestUpdateTodoTool:
     def test_update_todo_updated_at_auto_update(self, session, sample_todo):
         """Test that updated_at timestamp is automatically updated on modification."""
         # Arrange
-        from src.mcp_server.tools.update_todo import update_todo
+        from src.mcp_server.tools.update_todo import _update_todo_impl
 
         original_updated_at = sample_todo.updated_at
 
@@ -1102,7 +1102,7 @@ class TestUpdateTodoTool:
         time.sleep(0.01)
 
         # Act
-        result = update_todo(id=sample_todo.id, title="Modified title", _test_session=session)
+        result = _update_todo_impl(id=sample_todo.id, title="Modified title", _test_session=session)
 
         # Assert
         session.refresh(sample_todo)
@@ -1111,12 +1111,12 @@ class TestUpdateTodoTool:
     def test_update_todo_created_at_immutable(self, session, sample_todo):
         """Test that created_at timestamp remains unchanged after update."""
         # Arrange
-        from src.mcp_server.tools.update_todo import update_todo
+        from src.mcp_server.tools.update_todo import _update_todo_impl
 
         original_created_at = sample_todo.created_at
 
         # Act
-        result = update_todo(id=sample_todo.id, title="Modified title", _test_session=session)
+        result = _update_todo_impl(id=sample_todo.id, title="Modified title", _test_session=session)
 
         # Assert
         session.refresh(sample_todo)
@@ -1125,11 +1125,11 @@ class TestUpdateTodoTool:
     def test_update_todo_empty_title_validation(self, session, sample_todo):
         """Test that empty title raises validation error."""
         # Arrange
-        from src.mcp_server.tools.update_todo import update_todo
+        from src.mcp_server.tools.update_todo import _update_todo_impl
 
         # Act & Assert
         with pytest.raises(Exception) as exc_info:
-            update_todo(id=sample_todo.id, title="", _test_session=session)
+            _update_todo_impl(id=sample_todo.id, title="", _test_session=session)
 
         # Verify error mentions validation or empty
         error_message = str(exc_info.value).lower()
@@ -1138,13 +1138,13 @@ class TestUpdateTodoTool:
     def test_update_todo_title_exceeds_max_length(self, session, sample_todo):
         """Test that title exceeding 200 chars raises validation error."""
         # Arrange
-        from src.mcp_server.tools.update_todo import update_todo
+        from src.mcp_server.tools.update_todo import _update_todo_impl
 
         invalid_title = "A" * 201  # Exceeds max length
 
         # Act & Assert
         with pytest.raises(Exception) as exc_info:
-            update_todo(id=sample_todo.id, title=invalid_title, _test_session=session)
+            _update_todo_impl(id=sample_todo.id, title=invalid_title, _test_session=session)
 
         # Verify error mentions validation or length
         error_message = str(exc_info.value).lower()
@@ -1153,13 +1153,13 @@ class TestUpdateTodoTool:
     def test_update_todo_description_exceeds_max_length(self, session, sample_todo):
         """Test that description exceeding 2000 chars raises validation error."""
         # Arrange
-        from src.mcp_server.tools.update_todo import update_todo
+        from src.mcp_server.tools.update_todo import _update_todo_impl
 
         invalid_description = "A" * 2001  # Exceeds max length
 
         # Act & Assert
         with pytest.raises(Exception) as exc_info:
-            update_todo(id=sample_todo.id, description=invalid_description, _test_session=session)
+            _update_todo_impl(id=sample_todo.id, description=invalid_description, _test_session=session)
 
         # Verify error mentions validation or length
         error_message = str(exc_info.value).lower()
@@ -1168,11 +1168,11 @@ class TestUpdateTodoTool:
     def test_update_todo_invalid_status(self, session, sample_todo):
         """Test that invalid status value raises validation error."""
         # Arrange
-        from src.mcp_server.tools.update_todo import update_todo
+        from src.mcp_server.tools.update_todo import _update_todo_impl
 
         # Act & Assert
         with pytest.raises(Exception) as exc_info:
-            update_todo(id=sample_todo.id, status="invalid_status", _test_session=session)
+            _update_todo_impl(id=sample_todo.id, status="invalid_status", _test_session=session)
 
         # Verify error mentions validation or status
         error_message = str(exc_info.value).lower()
@@ -1181,10 +1181,10 @@ class TestUpdateTodoTool:
     def test_update_todo_returns_mcp_compliant_response(self, session, sample_todo):
         """Test that update_todo returns MCP-compliant Content object."""
         # Arrange
-        from src.mcp_server.tools.update_todo import update_todo
+        from src.mcp_server.tools.update_todo import _update_todo_impl
 
         # Act
-        result = update_todo(id=sample_todo.id, title="New title", _test_session=session)
+        result = _update_todo_impl(id=sample_todo.id, title="New title", _test_session=session)
 
         # Assert - FastMCP automatically converts to MCP Content format
         assert isinstance(result, str)
@@ -1204,7 +1204,7 @@ class TestUpdateTodoTool:
         re-included when reactivated).
         """
         # Arrange
-        from src.mcp_server.tools.update_todo import update_todo
+        from src.mcp_server.tools.update_todo import _update_todo_impl
         from src.mcp_server.tools.list_todos import _list_todos_impl
 
         # Create an active todo
@@ -1227,11 +1227,11 @@ class TestUpdateTodoTool:
         assert todo.status == TodoStatus.ACTIVE
 
         # Verify todo appears in list_todos (active todos only)
-        list_result_1 = list_todos(_test_session=session)
+        list_result_1 = _list_todos_impl(_test_session=session)
         assert original_title in list_result_1
 
         # Act 1: Transition from active → completed
-        result_1 = update_todo(id=todo.id, status="completed", _test_session=session)
+        result_1 = _update_todo_impl(id=todo.id, status="completed", _test_session=session)
 
         # Assert 1: Verify completion
         session.refresh(todo)
@@ -1239,7 +1239,7 @@ class TestUpdateTodoTool:
         assert "updated" in result_1.lower()
 
         # Verify todo is now excluded from list_todos (soft delete behavior)
-        list_result_2 = list_todos(_test_session=session)
+        list_result_2 = _list_todos_impl(_test_session=session)
         assert original_title not in list_result_2
 
         # Verify all other data preserved
@@ -1253,7 +1253,7 @@ class TestUpdateTodoTool:
         updated_at_after_completion = todo.updated_at
 
         # Act 2: Transition from completed → active (reactivation)
-        result_2 = update_todo(id=todo.id, status="active", _test_session=session)
+        result_2 = _update_todo_impl(id=todo.id, status="active", _test_session=session)
 
         # Assert 2: Verify reactivation
         session.refresh(todo)
@@ -1261,7 +1261,7 @@ class TestUpdateTodoTool:
         assert "updated" in result_2.lower()
 
         # Verify todo is now re-included in list_todos
-        list_result_3 = list_todos(_test_session=session)
+        list_result_3 = _list_todos_impl(_test_session=session)
         assert original_title in list_result_3
 
         # Verify all data still preserved
@@ -1326,7 +1326,7 @@ class TestSoftDeleteBehavior:
         """Test soft delete by changing status to completed (todo disappears from list)."""
         # Arrange
         from src.mcp_server.tools.list_todos import _list_todos_impl
-        from src.mcp_server.tools.update_todo import update_todo
+        from src.mcp_server.tools.update_todo import _update_todo_impl
 
         # Create active todo
         todo = Todo(title="Task to soft delete", status=TodoStatus.ACTIVE)
@@ -1335,14 +1335,14 @@ class TestSoftDeleteBehavior:
         session.refresh(todo)
 
         # Verify it appears in list
-        result_before = list_todos(_test_session=session)
+        result_before = _list_todos_impl(_test_session=session)
         assert "Task to soft delete" in result_before
 
         # Act - Soft delete by changing status to completed
-        update_todo(id=todo.id, status="completed", _test_session=session)
+        _update_todo_impl(id=todo.id, status="completed", _test_session=session)
 
         # Assert - Todo no longer appears in list_todos
-        result_after = list_todos(_test_session=session)
+        result_after = _list_todos_impl(_test_session=session)
         assert "Task to soft delete" not in result_after
 
         # Verify todo still exists in database (soft delete, not hard delete)
@@ -1354,7 +1354,7 @@ class TestSoftDeleteBehavior:
         """Test soft delete by changing status to archived (todo disappears from list)."""
         # Arrange
         from src.mcp_server.tools.list_todos import _list_todos_impl
-        from src.mcp_server.tools.update_todo import update_todo
+        from src.mcp_server.tools.update_todo import _update_todo_impl
 
         # Create active todo
         todo = Todo(title="Task to archive", status=TodoStatus.ACTIVE)
@@ -1363,14 +1363,14 @@ class TestSoftDeleteBehavior:
         session.refresh(todo)
 
         # Verify it appears in list
-        result_before = list_todos(_test_session=session)
+        result_before = _list_todos_impl(_test_session=session)
         assert "Task to archive" in result_before
 
         # Act - Soft delete by changing status to archived
-        update_todo(id=todo.id, status="archived", _test_session=session)
+        _update_todo_impl(id=todo.id, status="archived", _test_session=session)
 
         # Assert - Todo no longer appears in list_todos
-        result_after = list_todos(_test_session=session)
+        result_after = _list_todos_impl(_test_session=session)
         assert "Task to archive" not in result_after
 
         # Verify todo still exists in database
@@ -1382,7 +1382,7 @@ class TestSoftDeleteBehavior:
         """Test that completed todo can be reactivated and re-appears in list_todos."""
         # Arrange
         from src.mcp_server.tools.list_todos import _list_todos_impl
-        from src.mcp_server.tools.update_todo import update_todo
+        from src.mcp_server.tools.update_todo import _update_todo_impl
 
         # Create completed todo
         todo = Todo(title="Completed task", status=TodoStatus.COMPLETED)
@@ -1391,14 +1391,14 @@ class TestSoftDeleteBehavior:
         session.refresh(todo)
 
         # Verify it does NOT appear in list
-        result_before = list_todos(_test_session=session)
+        result_before = _list_todos_impl(_test_session=session)
         assert "Completed task" not in result_before
 
         # Act - Reactivate by changing status back to active
-        update_todo(id=todo.id, status="active", _test_session=session)
+        _update_todo_impl(id=todo.id, status="active", _test_session=session)
 
         # Assert - Todo re-appears in list_todos
-        result_after = list_todos(_test_session=session)
+        result_after = _list_todos_impl(_test_session=session)
         assert "Completed task" in result_after
 
         # Verify status changed in database
@@ -1409,7 +1409,7 @@ class TestSoftDeleteBehavior:
         """Test that archived todo can be reactivated and re-appears in list_todos."""
         # Arrange
         from src.mcp_server.tools.list_todos import _list_todos_impl
-        from src.mcp_server.tools.update_todo import update_todo
+        from src.mcp_server.tools.update_todo import _update_todo_impl
 
         # Create archived todo
         todo = Todo(title="Archived task", status=TodoStatus.ARCHIVED)
@@ -1418,14 +1418,14 @@ class TestSoftDeleteBehavior:
         session.refresh(todo)
 
         # Verify it does NOT appear in list
-        result_before = list_todos(_test_session=session)
+        result_before = _list_todos_impl(_test_session=session)
         assert "Archived task" not in result_before
 
         # Act - Reactivate
-        update_todo(id=todo.id, status="active", _test_session=session)
+        _update_todo_impl(id=todo.id, status="active", _test_session=session)
 
         # Assert - Todo re-appears in list_todos
-        result_after = list_todos(_test_session=session)
+        result_after = _list_todos_impl(_test_session=session)
         assert "Archived task" in result_after
 
         # Verify status changed
@@ -1436,7 +1436,7 @@ class TestSoftDeleteBehavior:
         """Test multiple todos can be soft deleted independently."""
         # Arrange
         from src.mcp_server.tools.list_todos import _list_todos_impl
-        from src.mcp_server.tools.update_todo import update_todo
+        from src.mcp_server.tools.update_todo import _update_todo_impl
 
         # Create multiple active todos
         todo1 = Todo(title="Task 1", status=TodoStatus.ACTIVE)
@@ -1448,17 +1448,17 @@ class TestSoftDeleteBehavior:
             session.refresh(todo)
 
         # Verify all appear in list
-        result_initial = list_todos(_test_session=session)
+        result_initial = _list_todos_impl(_test_session=session)
         assert "Task 1" in result_initial
         assert "Task 2" in result_initial
         assert "Task 3" in result_initial
 
         # Act - Soft delete task 1 and task 3
-        update_todo(id=todo1.id, status="completed", _test_session=session)
-        update_todo(id=todo3.id, status="archived", _test_session=session)
+        _update_todo_impl(id=todo1.id, status="completed", _test_session=session)
+        _update_todo_impl(id=todo3.id, status="archived", _test_session=session)
 
         # Assert - Only task 2 remains in list
-        result_after = list_todos(_test_session=session)
+        result_after = _list_todos_impl(_test_session=session)
         assert "Task 1" not in result_after
         assert "Task 2" in result_after
         assert "Task 3" not in result_after
@@ -1466,7 +1466,7 @@ class TestSoftDeleteBehavior:
     def test_soft_delete_preserves_data(self, session):
         """Test that soft delete preserves all todo data (title, description, timestamps)."""
         # Arrange
-        from src.mcp_server.tools.update_todo import update_todo
+        from src.mcp_server.tools.update_todo import _update_todo_impl
 
         todo = Todo(
             title="Important task",
@@ -1484,7 +1484,7 @@ class TestSoftDeleteBehavior:
         original_created_at = todo.created_at
 
         # Act - Soft delete
-        update_todo(id=todo.id, status="completed", _test_session=session)
+        _update_todo_impl(id=todo.id, status="completed", _test_session=session)
 
         # Assert - All data preserved except status
         session.refresh(todo)
@@ -1514,7 +1514,7 @@ class TestSearchTodosTool:
         and returns only active todos with matching titles.
         """
         # Arrange
-        from src.mcp_server.tools.search_todos import search_todos
+        from src.mcp_server.tools.search_todos import _search_todos_impl
 
         # Create todos with different titles
         todo1 = Todo(title="Buy groceries", description="Milk and eggs", status=TodoStatus.ACTIVE)
@@ -1526,7 +1526,7 @@ class TestSearchTodosTool:
         session.commit()
 
         # Act - Search for keyword "buy"
-        result = search_todos(keyword="buy", _test_session=session)
+        result = _search_todos_impl(keyword="buy", _test_session=session)
 
         # Assert - Only todos with "buy" in title are returned
         assert isinstance(result, str)
@@ -1545,7 +1545,7 @@ class TestSearchTodosTool:
         and returns todos even when keyword is only in description (not title).
         """
         # Arrange
-        from src.mcp_server.tools.search_todos import search_todos
+        from src.mcp_server.tools.search_todos import _search_todos_impl
 
         # Create todos with different descriptions
         todo1 = Todo(
@@ -1573,7 +1573,7 @@ class TestSearchTodosTool:
         session.commit()
 
         # Act - Search for keyword "grocery" (appears in descriptions only)
-        result = search_todos(keyword="grocery", _test_session=session)
+        result = _search_todos_impl(keyword="grocery", _test_session=session)
 
         # Assert - Todos with "grocery" in description are returned
         assert isinstance(result, str)
@@ -1592,7 +1592,7 @@ class TestSearchTodosTool:
         even if they match the search keyword.
         """
         # Arrange
-        from src.mcp_server.tools.search_todos import search_todos
+        from src.mcp_server.tools.search_todos import _search_todos_impl
 
         # Create todos with same keyword but different statuses
         active_todo = Todo(
@@ -1615,7 +1615,7 @@ class TestSearchTodosTool:
         session.commit()
 
         # Act - Search for keyword "buy" (all todos have it in title)
-        result = search_todos(keyword="buy", _test_session=session)
+        result = _search_todos_impl(keyword="buy", _test_session=session)
 
         # Assert - Only active todo is returned
         assert isinstance(result, str)
@@ -1634,7 +1634,7 @@ class TestSearchTodosTool:
         2. Empty results are handled gracefully when no matches found
         """
         # Arrange
-        from src.mcp_server.tools.search_todos import search_todos
+        from src.mcp_server.tools.search_todos import _search_todos_impl
 
         # Create todos with mixed case
         todo1 = Todo(title="URGENT Meeting", description="Board meeting", status=TodoStatus.ACTIVE)
@@ -1645,7 +1645,7 @@ class TestSearchTodosTool:
         session.commit()
 
         # Act 1 - Search with lowercase (should match URGENT, urgent, Urgent)
-        result_lowercase = search_todos(keyword="urgent", _test_session=session)
+        result_lowercase = _search_todos_impl(keyword="urgent", _test_session=session)
 
         # Assert 1 - Case-insensitive matching works
         assert isinstance(result_lowercase, str)
@@ -1657,7 +1657,7 @@ class TestSearchTodosTool:
         assert "3" in result_lowercase or "three" in result_lowercase.lower()
 
         # Act 2 - Search with uppercase (should also match all)
-        result_uppercase = search_todos(keyword="URGENT", _test_session=session)
+        result_uppercase = _search_todos_impl(keyword="URGENT", _test_session=session)
 
         # Assert 2 - Case-insensitive matching works both ways
         assert "URGENT Meeting" in result_uppercase
@@ -1665,7 +1665,7 @@ class TestSearchTodosTool:
         assert "Review Report" in result_uppercase
 
         # Act 3 - Search for non-existent keyword
-        result_empty = search_todos(keyword="nonexistent", _test_session=session)
+        result_empty = _search_todos_impl(keyword="nonexistent", _test_session=session)
 
         # Assert 3 - Empty results handled gracefully
         assert isinstance(result_empty, str)
@@ -1676,7 +1676,7 @@ class TestSearchTodosTool:
     def test_search_todos_sql_injection_prevention_keywords(self, session):
         """Test that SQL injection attempts via SQL keywords are rejected."""
         # Arrange
-        from src.mcp_server.tools.search_todos import search_todos
+        from src.mcp_server.tools.search_todos import _search_todos_impl
 
         # Create a normal todo
         todo = Todo(title="Normal Todo", description="Normal description", status=TodoStatus.ACTIVE)
@@ -1695,7 +1695,7 @@ class TestSearchTodosTool:
 
         for malicious_keyword in sql_injection_attempts:
             with pytest.raises(ValueError) as exc_info:
-                search_todos(keyword=malicious_keyword, _test_session=session)
+                _search_todos_impl(keyword=malicious_keyword, _test_session=session)
 
             # Verify the error message indicates malicious pattern detected
             error_message = str(exc_info.value).lower()
@@ -1704,13 +1704,13 @@ class TestSearchTodosTool:
     def test_search_todos_sql_injection_prevention_length(self, session):
         """Test that excessively long keywords are rejected to prevent resource exhaustion."""
         # Arrange
-        from src.mcp_server.tools.search_todos import search_todos
+        from src.mcp_server.tools.search_todos import _search_todos_impl
 
         # Act & Assert - Test keyword exceeding max length (100 chars)
         long_keyword = "A" * 101
 
         with pytest.raises(ValueError) as exc_info:
-            search_todos(keyword=long_keyword, _test_session=session)
+            _search_todos_impl(keyword=long_keyword, _test_session=session)
 
         # Verify error message mentions length
         error_message = str(exc_info.value).lower()
@@ -1719,14 +1719,14 @@ class TestSearchTodosTool:
     def test_search_todos_sql_injection_prevention_empty_keyword(self, session):
         """Test that empty or whitespace-only keywords are rejected."""
         # Arrange
-        from src.mcp_server.tools.search_todos import search_todos
+        from src.mcp_server.tools.search_todos import _search_todos_impl
 
         # Act & Assert - Test various empty keyword patterns
         invalid_keywords = ["", "   ", "\t", "\n"]
 
         for invalid_keyword in invalid_keywords:
             with pytest.raises(ValueError) as exc_info:
-                search_todos(keyword=invalid_keyword, _test_session=session)
+                _search_todos_impl(keyword=invalid_keyword, _test_session=session)
 
             # Verify error message indicates empty/whitespace issue
             error_message = str(exc_info.value).lower()
@@ -1735,7 +1735,7 @@ class TestSearchTodosTool:
     def test_search_todos_wildcard_escaping(self, session):
         """Test that SQL wildcard characters (%, _) are escaped and treated literally."""
         # Arrange
-        from src.mcp_server.tools.search_todos import search_todos
+        from src.mcp_server.tools.search_todos import _search_todos_impl
 
         # Create todos with literal % and _ characters
         todo1 = Todo(title="100% Complete", description="Fully done", status=TodoStatus.ACTIVE)
@@ -1749,7 +1749,7 @@ class TestSearchTodosTool:
         # Note: After sanitization, % becomes \%, which should match literal %
         # However, in our implementation, we escape % to \%, so searching for %
         # will actually search for the escaped version
-        result_percent = search_todos(keyword="%", _test_session=session)
+        result_percent = _search_todos_impl(keyword="%", _test_session=session)
 
         # Assert - The search should not match all todos (% is escaped)
         # Instead it should only match todos with literal % character
